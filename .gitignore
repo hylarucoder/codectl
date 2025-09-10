@@ -41,3 +41,5 @@ coverage.out
 
 # macOS
 .DS_Store
+codectl
+codectl-new

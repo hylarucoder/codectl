@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/codectl ./cmd/codectl"
+  bin = "tmp/codectl"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor"]
+  exclude_regex = ["_test.go"]
+
+[log]
+  time = true
+
