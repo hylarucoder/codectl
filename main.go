@@ -1,6 +1,5 @@
 package main
 
-import "codectl/internal/app"
+import "codectl/internal/cli"
 
-func main() { app.Main() }
-
+func main() { cli.Execute() }
