@@ -45,7 +45,7 @@ export HTTP_PROXY=http://127.0.0.1:7890
 export HTTPS_PROXY=http://127.0.0.1:7890
 ```
 
-3) 运行 codectl（当前为 TUI 原型，演示用）：
+3) 运行 codectl（内置版本检测 TUI）：
 
 ```bash
 # 本地开发运行
@@ -56,7 +56,9 @@ go build -o codectl
 ./codectl
 ```
 
-提示：当前程序启动后会进入一个最小可用的 TUI 原型（可按 q 退出）。随 Roadmap 推进，这里将变成完整的配置向导与健康检查面板。
+提示：启动后会展示 Codex / Claude / Gemini 的安装与版本信息：
+- r 重新检测，q 退出。
+后续版本将补充完整的配置向导与更全面的健康检查。
 
 ## 典型场景
 
