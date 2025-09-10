@@ -114,3 +114,77 @@ func renderStatusBar(width int, left, right string) string {
     style := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236"))
     return style.Render(line)
 }
+
+// renderStatusBarStyled renders a segmented status bar where each segment has
+// its own background color. Left segments are left-aligned, right segments
+// right-aligned. Spacing is ANSI-safe.
+func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
+    w := width
+    if w <= 0 {
+        w = 100
+    }
+
+    // Define palettes for segments
+    // Left palette (e.g., time)
+    leftBG := []string{"24", "30", "60", "66"}
+    // Right palette (e.g., git segments)
+    rightBG := []string{"22", "23", "28", "29", "57", "60"}
+
+    seg := func(text, bg string) string {
+        style := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color(bg))
+        return style.Render(" " + text + " ")
+    }
+
+    // Render segments with alternating palettes
+    lrender := make([]string, 0, len(leftParts))
+    for i, s := range leftParts {
+        bg := leftBG[i%len(leftBG)]
+        lrender = append(lrender, seg(s, bg))
+    }
+    rrender := make([]string, 0, len(rightParts))
+    for i, s := range rightParts {
+        bg := rightBG[i%len(rightBG)]
+        rrender = append(rrender, seg(s, bg))
+    }
+    lstr := strings.Join(lrender, " ")
+    rstr := strings.Join(rrender, " ")
+
+    // Shrink from left if overflow
+    lw := xansi.StringWidth(lstr)
+    rw := xansi.StringWidth(rstr)
+    inner := w
+    // ensure at least one space between sides when both present
+    minGap := 1
+    if lstr == "" || rstr == "" {
+        minGap = 0
+    }
+    for lw+rw+minGap > inner && len(lrender) > 0 {
+        lrender = lrender[:len(lrender)-1]
+        lstr = strings.Join(lrender, " ")
+        lw = xansi.StringWidth(lstr)
+    }
+    // If still overflow, trim right-most segment text (naive cut)
+    if lw+rw+minGap > inner && len(rrender) > 0 {
+        // convert last right segment to plain text approximation
+        // We can't easily strip ANSI here, so instead try reducing spacing by using no joins
+        // As a fallback, drop entire right segments until it fits
+        for lw+rw+minGap > inner && len(rrender) > 0 {
+            rrender = rrender[:len(rrender)-1]
+            rstr = strings.Join(rrender, " ")
+            rw = xansi.StringWidth(rstr)
+        }
+    }
+    // Compose
+    lw = xansi.StringWidth(lstr)
+    rw = xansi.StringWidth(rstr)
+    pad := inner - lw - rw
+    if pad < 0 {
+        pad = 0
+    }
+    gap := pad
+    if lstr != "" && rstr != "" && gap > 0 {
+        // keep at least one space between sides when both present
+        // If gap is zero, they will butt together; acceptable when width is tiny
+    }
+    return lstr + strings.Repeat(" ", gap) + rstr
+}

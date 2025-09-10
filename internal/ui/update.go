@@ -31,6 +31,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             m.quitting = true
             return m, tea.Quit
         }
+        // When input is not focused, start typing on any rune/space to auto-focus
+        if !m.ti.Focused() {
+            switch msg.Type {
+            case tea.KeyRunes:
+                m.ti.Focus()
+                m.ti.SetValue(m.ti.Value() + string(msg.Runes))
+                m.refreshSlash()
+                return m, nil
+            case tea.KeySpace:
+                m.ti.Focus()
+                m.ti.SetValue(m.ti.Value() + " ")
+                m.refreshSlash()
+                return m, nil
+            }
+        }
         // global input focus toggles
         if msg.String() == "/" && !m.ti.Focused() {
             m.ti.Focus()
@@ -90,6 +105,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                     m.slashVisible = false
                     return m, m.execSlashLine(val)
                 }
+                // empty message: no feedback and do nothing
+                if val == "" {
+                    return m, nil
+                }
                 // normal submit
                 m.lastInput = m.ti.Value()
                 m.ti.SetValue("")
@@ -119,6 +138,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 return m, nil
             }
             m.upgrading = true
+            // transient hint for upgrade mode
+            m.hintText = "操作: q/Ctrl+C 退出"
+            m.hintUntil = time.Now().Add(6 * time.Second)
             m.upgradeNotes = make(map[tools.ToolID]string, len(tools.Tools))
             total := 0
             for _, t := range tools.Tools {

@@ -1,12 +1,19 @@
 package ui
 
 import (
+    "context"
     "fmt"
+    "os"
+    "path/filepath"
     "strings"
+    "time"
 
     "github.com/charmbracelet/lipgloss"
     xansi "github.com/charmbracelet/x/ansi"
     tea "github.com/charmbracelet/bubbletea"
+
+    "codectl/internal/system"
+    "codectl/internal/tools"
 )
 
 type SlashCmd struct {
@@ -26,6 +33,8 @@ var slashCmds = []SlashCmd{
     {Name: "/cost", Desc: "Show total cost and duration"},
     {Name: "/doctor", Desc: "Diagnose and verify installation"},
     {Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
+    {Name: "/status", Desc: "Show current status for tools"},
+    {Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
 }
 
 func (m *model) refreshSlash() {
@@ -70,16 +79,11 @@ func filterSlashCommands(prefix string) []SlashCmd {
             }
         }
     }
-    if len(res) == 0 {
-        return slashCmds
-    }
+    // Do not fallback to all; empty means 'no matches'
     return res
 }
 
 func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
-    if len(cmds) == 0 {
-        cmds = slashCmds
-    }
     // limit list size for readability
     maxItems := 10
     if len(cmds) > maxItems {
@@ -100,6 +104,27 @@ func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
     var b strings.Builder
     // top border
     b.WriteString("╭" + strings.Repeat("─", inner) + "╮\n")
+    if len(cmds) == 0 {
+        line := "  no matches"
+        w := xansi.StringWidth(line)
+        if w > inner {
+            diff := w - inner
+            if diff > 0 && diff < len(line) {
+                line = line[:len(line)-diff]
+            }
+        }
+        b.WriteString("│")
+        b.WriteString(line)
+        pad := inner - xansi.StringWidth(line)
+        if pad > 0 {
+            b.WriteString(strings.Repeat(" ", pad))
+        }
+        b.WriteString("│\n")
+        // bottom border and hint
+        b.WriteString("╰" + strings.Repeat("─", inner) + "╯\n")
+        b.WriteString("  ↑/↓ 选择 · Enter 执行 · Esc 关闭\n")
+        return b.String()
+    }
     for i, c := range cmds {
         line := fmt.Sprintf("  %-*s  %s", nameWidth, c.Name, dim(c.Desc))
         // trim to inner width
@@ -159,6 +184,68 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
             func() tea.Msg { return noticeMsg("正在运行诊断…") },
             checkAllCmd(),
         )
+    case "/status":
+        return func() tea.Msg {
+            // Build a concise one-line status summary
+            parts := make([]string, 0, len(slashCmds))
+            for _, t := range tools.Tools {
+                res, ok := m.results[t.ID]
+                if !ok && m.checking {
+                    parts = append(parts, fmt.Sprintf("%s: 检测中…", t.ID))
+                    continue
+                }
+                if !ok {
+                    parts = append(parts, fmt.Sprintf("%s: 未知", t.ID))
+                    continue
+                }
+                if !res.Installed {
+                    parts = append(parts, fmt.Sprintf("%s: 未安装", t.ID))
+                    continue
+                }
+                ver := res.Version
+                if ver == "" {
+                    ver = "?"
+                }
+                if res.Latest != "" && tools.VersionLess(res.Version, res.Latest) {
+                    parts = append(parts, fmt.Sprintf("%s: %s→%s", t.ID, ver, res.Latest))
+                } else {
+                    parts = append(parts, fmt.Sprintf("%s: %s", t.ID, ver))
+                }
+            }
+            if len(parts) == 0 {
+                return noticeMsg("暂无状态")
+            }
+            summary := strings.Join(parts, " · ")
+            return noticeMsg(summary)
+        }
+    case "/init":
+        return func() tea.Msg {
+            ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+            defer cancel()
+            gi, _ := system.GetGitInfo(ctx, m.cwd)
+            if !gi.InRepo {
+                return noticeMsg("当前目录不在 Git 仓库内，未进行任何操作")
+            }
+            root, err := system.GitRoot(ctx, m.cwd)
+            if err != nil || strings.TrimSpace(root) == "" {
+                root = m.cwd
+            }
+            dir := filepath.Join(root, "vibe-docs")
+            if err := os.MkdirAll(dir, 0o755); err != nil {
+                return noticeMsg(fmt.Sprintf("创建目录失败：%v", err))
+            }
+            path := filepath.Join(dir, "AGENTS.md")
+            if _, statErr := os.Stat(path); statErr == nil {
+                return noticeMsg(fmt.Sprintf("已存在：%s", path))
+            } else if !os.IsNotExist(statErr) {
+                return noticeMsg(fmt.Sprintf("无法访问 %s：%v", path, statErr))
+            }
+            content := defaultAgentsMD()
+            if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
+                return noticeMsg(fmt.Sprintf("写入失败：%v", writeErr))
+            }
+            return noticeMsg(fmt.Sprintf("已创建：%s", path))
+        }
     default:
         // not implemented
         return func() tea.Msg {
@@ -192,4 +279,20 @@ func canonicalSlash(name string) string {
         }
     }
     return n
+}
+
+// defaultAgentsMD returns a minimal template for AGENTS.md
+func defaultAgentsMD() string {
+    return `# AGENTS.md
+
+This file guides AI coding agents working in this repository.
+
+- Scope: This file applies to the entire repository.
+- Conventions: Add code style, naming, and architectural guidelines here.
+- How to Run: Document dev setup and commands.
+- Testing: Where tests live and how to run them.
+- Prohibited: List areas agents must not modify.
+
+You can create more AGENTS.md files in subdirectories for overrides.
+`
 }

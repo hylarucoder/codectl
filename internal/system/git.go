@@ -83,3 +83,14 @@ func GetGitInfo(ctx context.Context, dir string) (GitInfo, error) {
     return gi, nil
 }
 
+// GitRoot returns the repository top-level directory for dir, if in a Git repo.
+func GitRoot(ctx context.Context, dir string) (string, error) {
+    if _, err := exec.LookPath("git"); err != nil {
+        return "", err
+    }
+    out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--show-toplevel").CombinedOutput()
+    if err != nil {
+        return "", err
+    }
+    return strings.TrimSpace(string(out)), nil
+}

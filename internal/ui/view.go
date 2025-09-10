@@ -8,6 +8,7 @@ import (
     "github.com/charmbracelet/lipgloss"
 
     "codectl/internal/tools"
+    appver "codectl/internal/version"
 )
 
 func (m model) View() string {
@@ -32,12 +33,17 @@ func (m model) View() string {
         }
         fmt.Fprintf(b, "\n  进度: %d/%d 完成\n", m.upgradeDone, m.upgradeTotal)
         b.WriteString("\n")
+        // single message line above input: prefer notice (if any), else lastInput
+        if m.notice != "" {
+            fmt.Fprintf(b, "  %s\n\n", m.notice)
+        } else if m.lastInput != "" {
+            fmt.Fprintf(b, "  %s\n\n", m.lastInput)
+        }
         b.WriteString(renderInputUI(m.width, m.ti.View()))
         // status bar just below input (hidden when slash dropdown is visible)
         if !(m.ti.Focused() && m.slashVisible) {
             b.WriteString(m.renderStatusBarLine())
         }
-        fmt.Fprintf(b, "\n  操作: q/Ctrl+C 退出\n\n")
         return b.String()
     }
     // Build status lines to render inside the banner
@@ -92,12 +98,12 @@ func (m model) View() string {
 
     b.WriteString(renderBanner(m.cwd, status))
 
-    if !m.updatedAt.IsZero() {
-        fmt.Fprintf(b, "\n  上次更新: %s\n", m.updatedAt.Format("2006-01-02 15:04:05"))
-    }
-    // message line just above input
+    // no "上次更新" display per requirement
+    // message line just above input: prefer notice (if any), else lastInput
     b.WriteString("\n")
-    if m.lastInput != "" {
+    if m.notice != "" {
+        fmt.Fprintf(b, "  %s\n\n", m.notice)
+    } else if m.lastInput != "" {
         fmt.Fprintf(b, "  %s\n\n", m.lastInput)
     }
     b.WriteString(renderInputUI(m.width, m.ti.View()))
@@ -109,37 +115,37 @@ func (m model) View() string {
     if !(m.ti.Focused() && m.slashVisible) {
         b.WriteString(m.renderStatusBarLine())
     }
-    if m.notice != "" {
-        fmt.Fprintf(b, "\n  %s\n", m.notice)
-    }
-    fmt.Fprintf(b, "\n  操作: r 重新检测 · u 升级到最新 · q/Ctrl+C 退出 · / 聚焦输入 · Esc 取消输入\n\n")
+    // no persistent operations hint; shown transiently in status bar
     return b.String()
 }
 
 // renderStatusBarLine builds the status bar string (one line plus a newline)
 // to be placed directly under the input (and slash overlay if visible).
 func (m model) renderStatusBarLine() string {
-    left := ""
-    if !m.now.IsZero() {
-        left = m.now.Format("2006-01-02 15:04:05")
-    } else {
-        left = time.Now().Format("2006-01-02 15:04:05")
+    // show transient hint if active
+    now := m.now
+    if now.IsZero() {
+        now = time.Now()
     }
-    right := ""
+    if m.hintText != "" && now.Before(m.hintUntil) {
+        leftParts := []string{m.hintText}
+        rightParts := []string{appver.AppVersion}
+        return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
+    }
+    leftParts := []string{now.Format("2006-01-02 15:04:05")}
+    // right segments: version + git info (if available)
+    rightParts := []string{"v" + appver.AppVersion}
     if m.git.InRepo {
-        dirty := ""
-        if m.git.Dirty {
-            dirty = " *"
+        rightParts = append(rightParts, "git")
+        if m.git.Branch != "" {
+            rightParts = append(rightParts, m.git.Branch)
         }
-        if m.git.Branch != "" && m.git.ShortSHA != "" {
-            right = fmt.Sprintf("git: %s %s%s", m.git.Branch, m.git.ShortSHA, dirty)
-        } else if m.git.Branch != "" {
-            right = fmt.Sprintf("git: %s%s", m.git.Branch, dirty)
-        } else if m.git.ShortSHA != "" {
-            right = fmt.Sprintf("git: %s%s", m.git.ShortSHA, dirty)
-        } else {
-            right = "git"
+        if m.git.ShortSHA != "" {
+            rightParts = append(rightParts, m.git.ShortSHA)
+        }
+        if m.git.Dirty {
+            rightParts = append(rightParts, "*")
         }
     }
-    return renderStatusBar(m.width, left, right) + "\n"
+    return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
 }

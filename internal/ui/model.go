@@ -39,6 +39,10 @@ type model struct {
     slashFiltered []SlashCmd
     slashIndex    int
     notice        string
+
+    // transient status-bar hint
+    hintText  string
+    hintUntil time.Time
 }
 
 func initialModel() model {
@@ -57,6 +61,10 @@ func initialModel() model {
     m.ti = ti
     // initialize slash suggestions (hidden at start)
     m.refreshSlash()
+
+    // transient operations hint in status bar
+    m.hintText = "操作: r 重新检测 · u 升级到最新 · q/Ctrl+C 退出 · / 聚焦输入 · Esc 取消输入"
+    m.hintUntil = time.Now().Add(6 * time.Second)
     return m
 }
 
