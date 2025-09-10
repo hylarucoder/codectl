@@ -1,0 +1,43 @@
+# Go binaries and build artifacts
+bin/
+build/
+dist/
+out/
+release/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace files (do not commit)
+go.work
+go.work.sum
+
+# Coverage and profiling outputs
+*.cov
+*.cover
+*.coverprofile
+coverage.*
+coverage.out
+*.prof
+*.pprof
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE/editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
