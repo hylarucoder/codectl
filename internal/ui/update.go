@@ -1,10 +1,12 @@
 package ui
 
 import (
+    "context"
     "strings"
     "time"
 
     tea "github.com/charmbracelet/bubbletea"
+    "codectl/internal/system"
     "codectl/internal/tools"
 )
 
@@ -24,6 +26,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.ti.Width = tiw
         return m, nil
     case tea.KeyMsg:
+        // Always allow Ctrl+C to quit, even when input is focused
+        if msg.String() == "ctrl+c" {
+            m.quitting = true
+            return m, tea.Quit
+        }
         // global input focus toggles
         if msg.String() == "/" && !m.ti.Focused() {
             m.ti.Focus()
@@ -63,6 +70,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             // capture Enter to submit or execute
             if msg.Type == tea.KeyEnter {
                 val := strings.TrimSpace(m.ti.Value())
+                // built-in plain commands (no slash needed)
+                switch strings.ToLower(val) {
+                case "exit", "quit":
+                    m.ti.SetValue("")
+                    m.slashVisible = false
+                    return m, func() tea.Msg { return quitMsg{} }
+                }
                 // execute selection if visible
                 if m.slashVisible && len(m.slashFiltered) > 0 {
                     cmdStr := m.slashFiltered[m.slashIndex].Name
@@ -124,12 +138,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             m.updatedAt = time.Now()
         }
         return m, nil
+    case tickMsg:
+        m.now = time.Time(msg)
+        // Throttle git checks to every 10 seconds
+        var cmd tea.Cmd
+        if m.lastGitCheck.IsZero() || time.Since(m.lastGitCheck) >= 10*time.Second {
+            m.lastGitCheck = time.Now()
+            cmd = gitInfoCmd(m.cwd)
+        }
+        // schedule next tick
+        if cmd != nil {
+            return m, tea.Batch(tickCmd(), cmd)
+        }
+        return m, tickCmd()
     case noticeMsg:
         m.notice = string(msg)
         return m, nil
     case quitMsg:
         m.quitting = true
         return m, tea.Quit
+    case gitInfoMsg:
+        m.git = msg.info
+        return m, nil
     case upgradeProgressMsg:
         // update individual tool upgrade note
         m.upgradeNotes[msg.id] = msg.note
@@ -144,4 +174,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         return m, nil
     }
     return m, nil
+}
+
+// periodic tick command
+func tickCmd() tea.Cmd {
+    return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// git info command
+func gitInfoCmd(dir string) tea.Cmd {
+    return func() tea.Msg {
+        ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+        defer cancel()
+        gi, _ := system.GetGitInfo(ctx, dir)
+        return gitInfoMsg{info: gi}
+    }
 }

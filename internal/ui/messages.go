@@ -1,6 +1,11 @@
 package ui
 
-import "codectl/internal/tools"
+import (
+    "time"
+
+    "codectl/internal/system"
+    "codectl/internal/tools"
+)
 
 // Bubble Tea messages
 type versionMsg struct {
@@ -18,3 +23,8 @@ type upgradeProgressMsg struct {
 type noticeMsg string
 type quitMsg struct{}
 
+// periodic tick for status bar time
+type tickMsg time.Time
+
+// git info updates
+type gitInfoMsg struct{ info system.GitInfo }

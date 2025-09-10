@@ -3,6 +3,7 @@ package ui
 import (
     "fmt"
     "strings"
+    "time"
 
     "github.com/charmbracelet/lipgloss"
 
@@ -16,7 +17,7 @@ func (m model) View() string {
 
     b := &strings.Builder{}
     if m.upgrading {
-        b.WriteString(renderBanner(m.cwd))
+        b.WriteString(renderBanner(m.cwd, nil))
         fmt.Fprintf(b, "\n  codectl — 正在升级\n\n")
         // show per-tool upgrade status for tools with npm package
         for _, t := range tools.Tools {
@@ -32,30 +33,35 @@ func (m model) View() string {
         fmt.Fprintf(b, "\n  进度: %d/%d 完成\n", m.upgradeDone, m.upgradeTotal)
         b.WriteString("\n")
         b.WriteString(renderInputUI(m.width, m.ti.View()))
-        fmt.Fprintf(b, "\n  操作: q 退出\n\n")
+        // status bar just below input (hidden when slash dropdown is visible)
+        if !(m.ti.Focused() && m.slashVisible) {
+            b.WriteString(m.renderStatusBarLine())
+        }
+        fmt.Fprintf(b, "\n  操作: q/Ctrl+C 退出\n\n")
         return b.String()
     }
-
-    b.WriteString(renderBanner(m.cwd))
-    fmt.Fprintf(b, "\n  codectl — CLI 版本检测\n\n")
+    // Build status lines to render inside the banner
+    var status []string
+    status = append(status, "codectl — CLI 版本检测")
+    status = append(status, "")
     for _, t := range tools.Tools {
         res, ok := m.results[t.ID]
         if !ok && m.checking {
-            fmt.Fprintf(b, "  • %-12s: 检测中…\n", t.ID)
+            status = append(status, fmt.Sprintf("  • %-12s: 检测中…", t.ID))
             continue
         }
         if !res.Installed {
             if res.Err != "" {
                 if res.Latest != "" {
-                    fmt.Fprintf(b, "  • %-12s: 未安装 (最新 %s, %s)\n", t.ID, res.Latest, res.Err)
+                    status = append(status, fmt.Sprintf("  • %-12s: 未安装 (最新 %s, %s)", t.ID, res.Latest, res.Err))
                 } else {
-                    fmt.Fprintf(b, "  • %-12s: 未安装 (%s)\n", t.ID, res.Err)
+                    status = append(status, fmt.Sprintf("  • %-12s: 未安装 (%s)", t.ID, res.Err))
                 }
             } else {
                 if res.Latest != "" {
-                    fmt.Fprintf(b, "  • %-12s: 未安装 (最新 %s)\n", t.ID, res.Latest)
+                    status = append(status, fmt.Sprintf("  • %-12s: 未安装 (最新 %s)", t.ID, res.Latest))
                 } else {
-                    fmt.Fprintf(b, "  • %-12s: 未安装\n", t.ID)
+                    status = append(status, fmt.Sprintf("  • %-12s: 未安装", t.ID))
                 }
             }
             continue
@@ -68,38 +74,72 @@ func (m model) View() string {
         // show latest and highlight when update available
         latest := res.Latest
         if latest == "" {
-            fmt.Fprintf(b, "  • %-12s: %s  [%s]\n", t.ID, ver, res.Source)
+            status = append(status, fmt.Sprintf("  • %-12s: %s  [%s]", t.ID, ver, res.Source))
             continue
         }
         if tools.VersionLess(res.Version, latest) {
             // highlight latest in red if update available
             red := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render
-            fmt.Fprintf(b, "  • %-12s: %s → %s  [%s]\n", t.ID, ver, red(latest), res.Source)
+            status = append(status, fmt.Sprintf("  • %-12s: %s → %s  [%s]", t.ID, ver, red(latest), res.Source))
         } else if tools.NormalizeVersion(res.Version) == tools.NormalizeVersion(latest) {
             // equal to latest; avoid redundant latest notation
-            fmt.Fprintf(b, "  • %-12s: %s  [%s]\n", t.ID, ver, res.Source)
+            status = append(status, fmt.Sprintf("  • %-12s: %s  [%s]", t.ID, ver, res.Source))
         } else {
             // current version is newer (rare); show both
-            fmt.Fprintf(b, "  • %-12s: %s (最新 %s)  [%s]\n", t.ID, ver, latest, res.Source)
+            status = append(status, fmt.Sprintf("  • %-12s: %s (最新 %s)  [%s]", t.ID, ver, latest, res.Source))
         }
     }
+
+    b.WriteString(renderBanner(m.cwd, status))
 
     if !m.updatedAt.IsZero() {
         fmt.Fprintf(b, "\n  上次更新: %s\n", m.updatedAt.Format("2006-01-02 15:04:05"))
     }
+    // message line just above input
     b.WriteString("\n")
+    if m.lastInput != "" {
+        fmt.Fprintf(b, "  %s\n\n", m.lastInput)
+    }
     b.WriteString(renderInputUI(m.width, m.ti.View()))
     // slash command overlay
     if m.ti.Focused() && m.slashVisible {
-        b.WriteString("\n")
         b.WriteString(renderSlashHelp(m.width, m.slashFiltered, m.slashIndex))
     }
-    if m.lastInput != "" {
-        fmt.Fprintf(b, "\n  已提交: %s\n", m.lastInput)
+    // status bar just below input (hidden when slash dropdown is visible)
+    if !(m.ti.Focused() && m.slashVisible) {
+        b.WriteString(m.renderStatusBarLine())
     }
     if m.notice != "" {
         fmt.Fprintf(b, "\n  %s\n", m.notice)
     }
-    fmt.Fprintf(b, "\n  操作: r 重新检测 · u 升级到最新 · q 退出 · / 聚焦输入 · Esc 取消输入\n\n")
+    fmt.Fprintf(b, "\n  操作: r 重新检测 · u 升级到最新 · q/Ctrl+C 退出 · / 聚焦输入 · Esc 取消输入\n\n")
     return b.String()
+}
+
+// renderStatusBarLine builds the status bar string (one line plus a newline)
+// to be placed directly under the input (and slash overlay if visible).
+func (m model) renderStatusBarLine() string {
+    left := ""
+    if !m.now.IsZero() {
+        left = m.now.Format("2006-01-02 15:04:05")
+    } else {
+        left = time.Now().Format("2006-01-02 15:04:05")
+    }
+    right := ""
+    if m.git.InRepo {
+        dirty := ""
+        if m.git.Dirty {
+            dirty = " *"
+        }
+        if m.git.Branch != "" && m.git.ShortSHA != "" {
+            right = fmt.Sprintf("git: %s %s%s", m.git.Branch, m.git.ShortSHA, dirty)
+        } else if m.git.Branch != "" {
+            right = fmt.Sprintf("git: %s%s", m.git.Branch, dirty)
+        } else if m.git.ShortSHA != "" {
+            right = fmt.Sprintf("git: %s%s", m.git.ShortSHA, dirty)
+        } else {
+            right = "git"
+        }
+    }
+    return renderStatusBar(m.width, left, right) + "\n"
 }

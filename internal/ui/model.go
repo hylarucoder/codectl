@@ -7,6 +7,7 @@ import (
     "github.com/charmbracelet/bubbles/textinput"
     tea "github.com/charmbracelet/bubbletea"
 
+    "codectl/internal/system"
     "codectl/internal/tools"
 )
 
@@ -27,6 +28,11 @@ type model struct {
     // input
     ti        textinput.Model
     lastInput string
+
+    // status bar state
+    now          time.Time
+    git          system.GitInfo
+    lastGitCheck time.Time
 
     // slash commands UI state
     slashVisible  bool
@@ -57,5 +63,8 @@ func initialModel() model {
 // public constructor for app
 func InitialModel() tea.Model { return initialModel() }
 
-func (m model) Init() tea.Cmd { return checkAllCmd() }
-
+func (m model) Init() tea.Cmd { return tea.Batch(checkAllCmd(), tickCmd(), gitInfoCmd(m.cwd)) }
+// public constructor for app
+func (m model) initCmd() tea.Cmd {
+    return tea.Batch(checkAllCmd(), tickCmd(), gitInfoCmd(m.cwd))
+}
