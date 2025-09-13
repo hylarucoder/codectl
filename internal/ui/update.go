@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"context"
-	"fmt"
-	"strings"
-	"time"
+    "context"
+    "fmt"
+    "strings"
+    "time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -12,12 +12,25 @@ import (
 
 	"codectl/internal/system"
 	"codectl/internal/tools"
-	tea "github.com/charmbracelet/bubbletea"
+    tea "github.com/charmbracelet/bubbletea"
+    zone "github.com/lrstanley/bubblezone"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+    switch msg := msg.(type) {
+    case tea.MouseMsg:
+        // Focus input when clicking on the input zone
+        if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+            if zone.Get("cli.input").InBounds(msg) {
+                if !m.ti.Focused() {
+                    m.ti.Focus()
+                }
+                m.refreshSlash()
+                return m, nil
+            }
+        }
+        return m, nil
+    case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		inner := msg.Width - 2

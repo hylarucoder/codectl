@@ -26,12 +26,15 @@ import (
 	"syscall"
 
 	"codectl/internal/system"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 // Start runs the spec UI program
 func Start() error {
 	m := initialModel()
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	// Ensure global zone manager exists (idempotent if already created).
+	zone.NewGlobal()
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 
@@ -196,6 +199,76 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 		}
 		return m, nil
+	case tea.MouseMsg:
+		// Focus panes by clicking their zones
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if zone.Get("spec.input").InBounds(msg) {
+				m.setFocus(focusInput)
+				return m, nil
+			}
+			if zone.Get("spec.files").InBounds(msg) {
+				m.setFocus(focusFiles)
+				// Map click Y to a visible row index. Account for left box
+				// top border (1) + table header (1) + header divider (1).
+				_, zy := zone.Get("spec.files").Pos(msg)
+				row := zy - 3
+				if row < 0 {
+					return m, nil
+				}
+				// If the list is longer than the viewport, this approximation
+				// selects from the top of the visible list. This works when
+				// the list fits; for long lists we can later enhance by
+				// custom-rendering rows with per-row zones.
+				if row >= len(m.visible) {
+					row = len(m.visible) - 1
+				}
+				if row < 0 {
+					return m, nil
+				}
+				cur := m.fileTable.Cursor()
+				if row != cur {
+					// Move cursor to clicked row (approximate absolute index)
+					m.fileTable.SetCursor(row)
+					return m, nil
+				}
+				// Clicking the already-selected row: perform Enter behavior
+				// (toggle dir open/collapse or open file)
+				if len(m.visible) == 0 {
+					return m, nil
+				}
+				if cur < 0 || cur >= len(m.visible) {
+					return m, nil
+				}
+				node := m.visible[cur].Node
+				if node.IsDir {
+					m.expanded[node.Path] = !m.expanded[node.Path]
+					m.reloadTree()
+					m.fileTable.SetRows(m.visibleRows())
+					// keep cursor at same index when possible
+					if cur >= len(m.visible) {
+						cur = len(m.visible) - 1
+					}
+					if cur >= 0 {
+						m.fileTable.SetCursor(cur)
+					}
+					return m, nil
+				}
+				// Open file in preview
+				it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+				m.selected = &it
+				m.ti.Reset()
+				m.ti.Blur()
+				m.recalcViewports()
+				m.statusMsg = "按 Esc 返回"
+				m.mdVP.SetContent("渲染中…")
+				return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
+			}
+			if zone.Get("spec.preview").InBounds(msg) {
+				m.setFocus(focusPreview)
+				return m, nil
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		// when terminal has focus, forward keys directly to PTY
 		if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
@@ -225,74 +298,89 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pageDetail:
 			switch msg.String() {
 			case "enter":
-				// open selection: dir -> toggle expand; file -> render
-				if len(m.visible) == 0 {
-					return m, nil
-				}
-				idx := m.fileTable.Cursor()
-				if idx < 0 || idx >= len(m.visible) {
-					return m, nil
-				}
-				node := m.visible[idx].Node
-				if node.IsDir {
-					m.expanded[node.Path] = !m.expanded[node.Path]
-					m.reloadTree()
-					// keep cursor position (clamped by table)
-					if idx >= len(m.visible) {
-						idx = len(m.visible) - 1
+				// Only handle Enter for the file tree when the file pane is focused.
+				if m.focus == focusFiles {
+					// open selection: dir -> toggle expand; file -> render
+					if len(m.visible) == 0 {
+						return m, nil
 					}
-					m.fileTable.SetRows(m.visibleRows())
-					m.fileTable.SetCursor(idx)
-					return m, nil
+					idx := m.fileTable.Cursor()
+					if idx < 0 || idx >= len(m.visible) {
+						return m, nil
+					}
+					node := m.visible[idx].Node
+					if node.IsDir {
+						m.expanded[node.Path] = !m.expanded[node.Path]
+						m.reloadTree()
+						// keep cursor position (clamped by table)
+						if idx >= len(m.visible) {
+							idx = len(m.visible) - 1
+						}
+						m.fileTable.SetRows(m.visibleRows())
+						m.fileTable.SetCursor(idx)
+						return m, nil
+					}
+					// render file
+					it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+					m.selected = &it
+					m.ti.Reset()
+					m.ti.Blur()
+					m.recalcViewports()
+					m.statusMsg = "按 Esc 返回"
+					m.mdVP.SetContent("渲染中…")
+					return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
 				}
-				// render file
-				it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
-				m.selected = &it
-				m.ti.Reset()
-				m.ti.Blur()
-				m.recalcViewports()
-				m.statusMsg = "按 Esc 返回"
-				m.mdVP.SetContent("渲染中…")
-				return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
+				// If input is focused, let the input handler process Enter below.
 			case "left", "backspace":
-				// collapse dir or move to parent
-				if len(m.visible) == 0 {
-					return m, nil
-				}
-				idx := m.fileTable.Cursor()
-				if idx < 0 || idx >= len(m.visible) {
-					return m, nil
-				}
-				node := m.visible[idx].Node
-				if node.IsDir && m.expanded[node.Path] {
-					m.expanded[node.Path] = false
-					m.reloadTree()
-					m.fileTable.SetRows(m.visibleRows())
-					m.fileTable.SetCursor(idx)
-					return m, nil
-				}
-				if node.Parent != nil {
-					parent := node.Parent
-					// ensure parent visible
-					m.expanded[parent.Path] = true
-					m.reloadTree()
-					for i, r := range m.visible {
-						if r.Node == parent {
-							m.fileTable.SetCursor(i)
-							break
+				// Only treat Left/Backspace as tree navigation when file pane focused.
+				if m.focus == focusFiles {
+					// collapse dir or move to parent
+					if len(m.visible) == 0 {
+						return m, nil
+					}
+					idx := m.fileTable.Cursor()
+					if idx < 0 || idx >= len(m.visible) {
+						return m, nil
+					}
+					node := m.visible[idx].Node
+					if node.IsDir && m.expanded[node.Path] {
+						m.expanded[node.Path] = false
+						m.reloadTree()
+						m.fileTable.SetRows(m.visibleRows())
+						m.fileTable.SetCursor(idx)
+						return m, nil
+					}
+					if node.Parent != nil {
+						parent := node.Parent
+						// ensure parent visible
+						m.expanded[parent.Path] = true
+						m.reloadTree()
+						for i, r := range m.visible {
+							if r.Node == parent {
+								m.fileTable.SetCursor(i)
+								break
+							}
 						}
 					}
+					return m, nil
 				}
-				return m, nil
+				// If input is focused, allow textinput to receive Backspace/Left.
 			case "tab":
 				// terminal focus toggle disabled (no terminal binding)
 				return m, nil
 			case "ctrl+h":
-				m.setFocus(focusFiles)
-				return m, nil
+				// Avoid stealing common Backspace mapping (Ctrl+H) from input
+				if m.focus != focusInput {
+					m.setFocus(focusFiles)
+					return m, nil
+				}
+				// let input handle as delete when focused
 			case "ctrl+l":
-				m.setFocus(focusPreview)
-				return m, nil
+				if m.focus != focusInput {
+					m.setFocus(focusPreview)
+					return m, nil
+				}
+				// let input handle when focused
 			case "ctrl+j":
 				if m.focus == focusFiles || m.focus == focusPreview {
 					m.lastTopFocus = m.focus
@@ -361,8 +449,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			// route updates based on focus
 			if m.focus == focusFiles {
+				prev := m.fileTable.Cursor()
 				m.fileTable, cmd = m.fileTable.Update(msg)
 				cmds = append(cmds, cmd)
+				// When moving selection in the file tree, auto-open markdown files on the right
+				cur := m.fileTable.Cursor()
+				if cur != prev && cur >= 0 && cur < len(m.visible) {
+					node := m.visible[cur].Node
+					if !node.IsDir && isMarkdown(node.Path) {
+						it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+						m.selected = &it
+						m.ti.Reset()
+						m.ti.Blur()
+						m.recalcViewports()
+						m.statusMsg = "按 Esc 返回"
+						m.mdVP.SetContent("渲染中…")
+						cmds = append(cmds, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode))
+						return m, tea.Batch(cmds...)
+					}
+				}
 			}
 			if m.focus == focusInput {
 				m.ti, cmd = m.ti.Update(msg)
@@ -474,6 +579,7 @@ func (m model) View() string {
 		}
 		// top: split left (file manager) and right (markdown)
 		left := leftBox.Render(m.fileTable.View())
+		left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
 		if m.selected != nil {
@@ -501,10 +607,50 @@ func (m model) View() string {
 			m.mdVP.View(),
 		)
 		right := rightBox.Render(rightInner)
+		right = zone.Mark("spec.preview", right)
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
-		bottom := inputBox.Render(m.ti.View()) + "\n" + m.renderWorkbar()
-		return lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+		bottomInput := inputBox.Render(m.ti.View())
+		bottom := zone.Mark("spec.input", bottomInput) + "\n" + m.renderWorkbar()
+		out := lipgloss.JoinVertical(lipgloss.Left, top, bottom)
+		// When the input is focused, move the REAL terminal cursor to the
+		// input caret line so OS IME candidate windows anchor correctly.
+		// We approximate the column using prompt + visible value width.
+		if m.focus == focusInput {
+			// Move cursor: up 2 lines (from status bar to input content row),
+			// CR to column 1, then forward past border + left pad + prompt.
+			// Note: boxStyle has Padding(0,1) so we add one space after the
+			// left border. This positioning is intentionally conservative; it
+			// avoids drawing past the right border.
+			// Calculate prompt and value widths (display width).
+			pw := xansi.StringWidth(m.ti.Prompt)
+			vw := xansi.StringWidth(m.ti.Value())
+			// Max visible content inside textinput width minus prompt
+			maxVisible := m.ti.Width - pw
+			if maxVisible < 0 {
+				maxVisible = 0
+			}
+			if vw > maxVisible {
+				vw = maxVisible
+			}
+			// base offset: border(1) + left pad(1)
+			base := 2
+			col := base + pw + vw
+			if col < 0 {
+				col = 0
+			}
+			// emit ANSI to show cursor, move up two lines, CR, and move right
+			// by computed columns.
+			out += "\x1b[?25h\x1b[2A\r"
+			if col > 0 {
+				out += fmt.Sprintf("\x1b[%dC", col)
+			}
+		} else {
+			// Hide the real cursor when not in input to prevent stray IME anchors
+			out += "\x1b[?25l"
+		}
+		// Zone scan strips markers and records positions.
+		return zone.Scan(out)
 	default:
 		return ""
 	}
@@ -838,6 +984,14 @@ func stripFrontmatter(s string) string {
 }
 
 // trimEdgeBlankLines removes leading and trailing blank lines from a string
+
+// isMarkdown reports whether the given path looks like a Markdown document
+// that we can render on the right pane.
+func isMarkdown(path string) bool {
+	p := strings.ToLower(path)
+	return strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".mdx") || strings.HasSuffix(p, ".markdown")
+}
+
 // while preserving inner spacing and ANSI sequences.
 func trimEdgeBlankLines(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
@@ -894,13 +1048,14 @@ func (m *model) buildTree(dir string, parent *treeNode) *treeNode {
 		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
 	})
 	for _, e := range entries {
-		n := &treeNode{
-			Name:   e.Name(),
-			Path:   filepath.Join(dir, e.Name()),
-			IsDir:  e.IsDir(),
-			Parent: root,
+		p := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			child := m.buildTree(p, root)
+			root.Children = append(root.Children, child)
+		} else {
+			n := &treeNode{Name: e.Name(), Path: p, IsDir: false, Parent: root}
+			root.Children = append(root.Children, n)
 		}
-		root.Children = append(root.Children, n)
 	}
 	return root
 }
@@ -1048,9 +1203,9 @@ func (m model) renderWorkbar() string {
 		}
 	}
 	if !m.now.IsZero() {
-		right = append(right, m.now.Format("15:04:05"))
+		right = append(right, m.now.Format("15:04"))
 	} else {
-		right = append(right, time.Now().Format("15:04:05"))
+		right = append(right, time.Now().Format("15:04"))
 	}
 	return renderStatusBarStyled(m.width, left, right)
 }

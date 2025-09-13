@@ -5,13 +5,16 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+    zone "github.com/lrstanley/bubblezone"
 
 	"codectl/internal/ui"
 )
 
 // Start runs the TUI program and returns any error.
 func Start() error {
-	if _, err := tea.NewProgram(ui.InitialModel()).Run(); err != nil {
+	// Initialize global bubblezone manager for mouse-aware zones.
+	zone.NewGlobal()
+	if _, err := tea.NewProgram(ui.InitialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err
 	}
 	return nil

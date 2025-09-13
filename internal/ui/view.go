@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+    zone "github.com/lrstanley/bubblezone"
 
 	"codectl/internal/tools"
 	appver "codectl/internal/version"
@@ -120,7 +121,9 @@ func (m model) View() string {
 	} else if m.lastInput != "" {
 		fmt.Fprintf(b, "  %s\n\n", m.lastInput)
 	}
-	b.WriteString(renderInputUI(m.width, m.ti.View()))
+	// Mark input box as a zone for mouse focus
+	inputBox := renderInputUI(m.width, m.ti.View())
+	b.WriteString(zone.Mark("cli.input", inputBox))
 	// slash command overlay
 	if m.ti.Focused() && m.slashVisible {
 		b.WriteString(renderSlashHelp(m.width, m.slashFiltered, m.slashIndex))
@@ -130,7 +133,7 @@ func (m model) View() string {
 		b.WriteString(m.renderStatusBarLine())
 	}
 	// no persistent operations hint; shown transiently in status bar
-	return b.String()
+	return zone.Scan(b.String())
 }
 
 // renderStatusBarLine builds the status bar string (one line plus a newline)
@@ -146,7 +149,7 @@ func (m model) renderStatusBarLine() string {
 		rightParts := []string{appver.AppVersion}
 		return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
 	}
-	leftParts := []string{now.Format("2006-01-02 15:04:05")}
+    leftParts := []string{"codectl", now.Format("15:04")}
 	// right segments: version + git info (if available)
 	rightParts := []string{"v" + appver.AppVersion}
 	if m.git.InRepo {
