@@ -5,7 +5,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-    zone "github.com/lrstanley/bubblezone"
+	zone "github.com/lrstanley/bubblezone"
 
 	"codectl/internal/ui"
 )

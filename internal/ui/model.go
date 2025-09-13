@@ -52,6 +52,9 @@ type model struct {
 
 	// tabs
 	activeTab tabKind
+
+	// config info (for dash)
+	config ConfigInfo
 }
 
 func initialModel() model {
@@ -71,20 +74,22 @@ func initialModel() model {
 	// initialize slash suggestions (hidden at start)
 	m.refreshSlash()
 
-	// transient operations hint in status bar (no 'r'/'u' shortcuts)
-	m.hintText = "操作: ←/→ 切换Tab · Enter 执行 · / 命令模式 · Esc 取消输入 · Ctrl+C 退出"
+	// transient operations hint in status bar (single-screen, no tabs)
+	m.hintText = "操作: Enter 运行诊断 · ⌘⇧P/‘/’ 命令面板 · Esc 取消输入 · Ctrl+C 退出"
 	m.hintUntil = time.Now().Add(6 * time.Second)
 	// default tab
-	m.activeTab = tabInstall
+	m.activeTab = tabDash
 	return m
 }
 
 // public constructor for app
 func InitialModel() tea.Model { return initialModel() }
 
-func (m model) Init() tea.Cmd { return tea.Batch(checkAllCmd(), tickCmd(), gitInfoCmd(m.cwd)) }
+func (m model) Init() tea.Cmd {
+	return tea.Batch(checkAllCmd(), configInfoCmd(), tickCmd(), gitInfoCmd(m.cwd))
+}
 
 // public constructor for app
 func (m model) initCmd() tea.Cmd {
-	return tea.Batch(checkAllCmd(), tickCmd(), gitInfoCmd(m.cwd))
+	return tea.Batch(checkAllCmd(), configInfoCmd(), tickCmd(), gitInfoCmd(m.cwd))
 }

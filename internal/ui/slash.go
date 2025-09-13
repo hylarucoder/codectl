@@ -26,6 +26,8 @@ type SlashCmd struct {
 }
 
 var slashCmds = []SlashCmd{
+	{Name: "/specui", Desc: "Open Spec UI"},
+	{Name: "/settings", Desc: "Open settings to configure models"},
 	{Name: "/add-dir", Desc: "Add a new working directory"},
 	{Name: "/agents", Desc: "Manage agent configurations"},
 	{Name: "/bashes", Desc: "List and manage background tasks"},
@@ -128,9 +130,9 @@ func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
 	if inner < 20 {
 		inner = 20
 	}
-	// styles
-	hl := lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render
+	// styles (centralized palette)
+	hl := lipgloss.NewStyle().Foreground(Vitesse.Primary).Render
+	dim := lipgloss.NewStyle().Foreground(Vitesse.Muted).Render
 	var b strings.Builder
 	// top border
 	b.WriteString("╭" + strings.Repeat("─", inner) + "╮\n")
@@ -204,6 +206,23 @@ func (m model) execSlashLine(line string) tea.Cmd {
 func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 	c := canonicalSlash(cmd)
 	switch c {
+	case "/settings":
+		// Launch the interactive settings form via a child process of this binary
+		return func() tea.Msg {
+			bin, _ := os.Executable()
+			if strings.TrimSpace(bin) == "" {
+				// fall back to PATH resolution
+				if p, err := exec.LookPath("codectl"); err == nil && p != "" {
+					bin = p
+				}
+			}
+			if strings.TrimSpace(bin) == "" {
+				return noticeMsg("无法定位 codectl 可执行文件，无法打开设置")
+			}
+			cmd := exec.Command(bin, "settings")
+			cmd.Env = os.Environ()
+			return tea.ExecProcess(cmd, func(err error) tea.Msg { return settingsFinishedMsg{err: err} })()
+		}
 	case "/exit", "/quit":
 		return func() tea.Msg { return quitMsg{} }
 	case "/clear", "/reset", "/new":
@@ -213,6 +232,7 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		return tea.Batch(
 			func() tea.Msg { return noticeMsg("正在运行诊断…") },
 			checkAllCmd(),
+			configInfoCmd(),
 		)
 	case "/add":
 		// Install specified or all tools via npm, similar to `codectl cli add`
@@ -499,6 +519,20 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		cmd := exec.Command(bin, argv...)
 		cmd.Env = os.Environ()
 		return tea.ExecProcess(cmd, func(err error) tea.Msg { return codexFinishedMsg{err: err} })
+	case "/specui":
+		// Launch spec UI via child process `codectl spec`
+		bin := ""
+		if p, err := exec.LookPath("codectl"); err == nil && p != "" {
+			bin = p
+		} else if p2, _ := os.Executable(); p2 != "" {
+			bin = p2
+		}
+		if strings.TrimSpace(bin) == "" {
+			return func() tea.Msg { return noticeMsg("无法找到 codectl 可执行文件") }
+		}
+		cmd := exec.Command(bin, "spec")
+		cmd.Env = os.Environ()
+		return tea.ExecProcess(cmd, func(err error) tea.Msg { return noticeMsg("Spec UI 已退出") })
 	default:
 		// not implemented
 		return func() tea.Msg {

@@ -12,7 +12,8 @@ import (
 type tabKind int
 
 const (
-	tabInstall tabKind = iota
+	tabDash tabKind = iota
+	tabInstall
 	tabUpdate
 	tabSync
 	tabClean
@@ -20,6 +21,8 @@ const (
 
 func (t tabKind) String() string {
 	switch t {
+	case tabDash:
+		return "dash"
 	case tabInstall:
 		return "install"
 	case tabUpdate:
@@ -47,6 +50,7 @@ func renderTabs(width int, active tabKind) string {
 		k   tabKind
 		txt string
 	}{
+		{tabDash, "dash"},
 		{tabInstall, "install"},
 		{tabUpdate, "update"},
 		{tabSync, "sync"},
@@ -94,18 +98,17 @@ func renderBanner(cwd string, extra []string) string {
 			max = w
 		}
 	}
-	top := "╭" + strings.Repeat("─", max+2) + "╮\n"
-	bot := "╰" + strings.Repeat("─", max+2) + "╯\n"
+	border := BorderStyle()
+	fillBG := FillBG()
+	top := border.Render("╭"+strings.Repeat("─", max+2)+"╮") + "\n"
+	bot := border.Render("╰"+strings.Repeat("─", max+2)+"╯") + "\n"
 	var sb strings.Builder
 	sb.WriteString(top)
 	for _, ln := range lines {
-		pad := max - xansi.StringWidth(ln)
-		sb.WriteString("│ ")
-		sb.WriteString(ln)
-		if pad > 0 {
-			sb.WriteString(strings.Repeat(" ", pad))
-		}
-		sb.WriteString(" │\n")
+		sb.WriteString(border.Render("│"))
+		// ANSI-safe width: background fill handles padding/truncation
+		sb.WriteString(fillBG.Width(max + 2).Render(" " + ln))
+		sb.WriteString(border.Render("│\n"))
 	}
 	sb.WriteString(bot)
 	return sb.String()
@@ -123,22 +126,16 @@ func renderInputUI(width int, content string) string {
 		w = 10
 	}
 	inner := w - 2
-	// compute display width ignoring ANSI escape codes
-	cw := xansi.StringWidth(content)
-	if cw > inner {
-		cw = inner
-	}
-	pad := inner - cw
-	top := "╭" + strings.Repeat("─", inner) + "╮\n"
-	bot := "╰" + strings.Repeat("─", inner) + "╯\n"
+	// ANSI-safe width handled by lipgloss Width
+	border := BorderStyle()
+	fillBG := FillBG()
+	top := border.Render("╭"+strings.Repeat("─", inner)+"╮") + "\n"
+	bot := border.Render("╰"+strings.Repeat("─", inner)+"╯") + "\n"
 	var sb strings.Builder
 	sb.WriteString(top)
-	sb.WriteString("│")
-	sb.WriteString(content)
-	if pad > 0 {
-		sb.WriteString(strings.Repeat(" ", pad))
-	}
-	sb.WriteString("│\n")
+	sb.WriteString(border.Render("│"))
+	sb.WriteString(fillBG.Width(inner).Render(content))
+	sb.WriteString(border.Render("│\n"))
 	sb.WriteString(bot)
 	return sb.String()
 }
@@ -176,7 +173,8 @@ func renderStatusBar(width int, left, right string) string {
 		pad = 0
 	}
 	line := left + strings.Repeat(" ", pad) + right
-	style := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("236"))
+	// Vitesse Dark: fg and bg from design
+	style := lipgloss.NewStyle().Foreground(Vitesse.Secondary).Background(Vitesse.Bg)
 	return style.Render(line)
 }
 
@@ -195,31 +193,22 @@ func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
 		w = 100
 	}
 
-	// Base bar colors (adaptive like the example)
-	barFG := lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}
-	barBG := lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}
-
-	statusBarStyle := lipgloss.NewStyle().
-		Foreground(barFG).
-		Background(barBG)
+	// Vitesse bar colors
+	statusBarStyle := StatusBarBase()
 
 	// Key chip (left-most) and generic nugget chips
-	keyStyle := lipgloss.NewStyle().
-		Inherit(statusBarStyle).
-		Foreground(lipgloss.Color("#FFFDF5")).
-		Background(lipgloss.Color("#FF5F87")).
-		Padding(0, 1).
-		MarginRight(1)
+	keyStyle := ChipKeyStyle().Inherit(statusBarStyle).MarginRight(1)
 
 	nugget := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFDF5")).
+		Foreground(Vitesse.OnAccent).
 		Padding(0, 1)
 
-	// Palette for nuggets (alternating)
+		// Palette for nuggets (alternating)
 	nuggetBG := []lipgloss.Color{
-		lipgloss.Color("#A550DF"), // purple
-		lipgloss.Color("#6124DF"), // darker purple
-		lipgloss.Color("#43BF6D"), // green
+		Vitesse.Primary, // green
+		Vitesse.Blue,    // blue
+		Vitesse.Yellow,  // yellow
+		Vitesse.Magenta, // magenta
 	}
 
 	// Center fill inherits bar style and expands to fill remaining width

@@ -1,0 +1,593 @@
+package ui
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
+	zone "github.com/lrstanley/bubblezone"
+
+	"codectl/internal/tools"
+)
+
+func renderDash(m model) string {
+	var b strings.Builder
+	// Default dash uses auto height from content. Prefer renderDashFixed for equal rows.
+	b.WriteString(renderDashGrid(m))
+	b.WriteString("\n")
+	return b.String()
+}
+
+// renderDashFixed enforces equal card heights by fixing the number of inner lines
+// for cards in each row. Use this when you want three rows evenly divided.
+func renderDashFixed(m model, innerLinesPerCard int) string {
+	var b strings.Builder
+	// Grid cards (homepage dashboard)
+	b.WriteString(renderDashGridFixed(m, innerLinesPerCard))
+	b.WriteString("\n")
+	return b.String()
+}
+
+// renderDashGrid lays out three rows of cards:
+// Row1: 2 columns — [Spec统计] [最近标记完成 spec]
+// Row2: 3 columns — [codex/claude/gemini 状态] [codectl slogan] [正在使用的 model]
+// Row3: 2 columns — [MCP 服务] [空]
+func renderDashGrid(m model) string {
+	W := m.width
+	if W <= 0 {
+		W = 80
+	}
+	gap := 2
+	// Row 1: 2 cols
+	w12 := calcInnerWidths(W, 2, gap)
+	col11 := renderLabeledCard(w12[0], "Spec 统计", linesSpecStats(m))
+	col12 := renderLabeledCard(w12[1], "最近标记完成 spec", linesRecentSpecsTable(w12[1], m))
+	row1 := joinCols([]string{col11, col12}, w12, gap)
+
+	// Row 2: 3 cols
+	w23 := calcInnerWidths(W, 3, gap)
+	col21 := renderLabeledCard(w23[0], "codex / claude / gemini 状态", linesCliStatusTable(w23[0], m))
+	col22 := renderLabeledCard(w23[1], "codectl slogan", linesSlogan())
+	col23 := renderLabeledCard(w23[2], "正在使用的 Model", linesModels(m))
+	row2 := joinCols([]string{col21, col22, col23}, w23, gap)
+
+	// Row 3: 2 cols
+	w32 := calcInnerWidths(W, 2, gap)
+	col31 := renderLabeledCard(w32[0], "MCP 服务", linesMCP(m))
+	col32 := renderLabeledCard(w32[1], "", nil) // empty second column
+	row3 := joinCols([]string{col31, col32}, w32, gap)
+
+	return row1 + "\n" + row2 + "\n" + row3
+}
+
+// renderDashGridFixed is like renderDashGrid but each card is constrained to
+// exactly innerLines lines in its content area (between top/bottom borders),
+// ensuring equal heights across columns and rows.
+func renderDashGridFixed(m model, innerLines int) string {
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	W := m.width
+	if W <= 0 {
+		W = 80
+	}
+	gap := 2
+	// Row 1: 2 cols
+	w12 := calcInnerWidths(W, 2, gap)
+	col11 := renderLabeledCardFixed(w12[0], "Spec 统计", linesSpecStats(m), innerLines)
+	col12 := renderLabeledCardFixed(w12[1], "最近标记完成 spec", linesRecentSpecsTable(w12[1], m), innerLines)
+	row1 := joinCols([]string{col11, col12}, w12, gap)
+
+	// Row 2: 3 cols
+	w23 := calcInnerWidths(W, 3, gap)
+	col21 := renderLabeledCardFixed(w23[0], "codex / claude / gemini 状态", linesCliStatusTable(w23[0], m), innerLines)
+	col22 := renderLabeledCardFixed(w23[1], "codectl slogan", linesSlogan(), innerLines)
+	col23 := renderLabeledCardFixed(w23[2], "正在使用的 Model", linesModels(m), innerLines)
+	row2 := joinCols([]string{col21, col22, col23}, w23, gap)
+
+	// Row 3: 2 cols
+	w32 := calcInnerWidths(W, 2, gap)
+	col31 := renderLabeledCardFixed(w32[0], "MCP 服务", linesMCP(m), innerLines)
+	col32 := renderLabeledCardFixed(w32[1], "", nil, innerLines) // empty second column
+	row3 := joinCols([]string{col31, col32}, w32, gap)
+
+	return row1 + "\n" + row2 + "\n" + row3
+}
+
+// calcInnerWidths computes inner content widths (excluding the 2 border characters) for n columns.
+func calcInnerWidths(totalW, cols, gap int) []int {
+	if cols <= 0 {
+		return []int{}
+	}
+	// Each card has outer width = inner + 2. Total gaps = gap*(cols-1)
+	avail := totalW - gap*(cols-1) - 2*cols
+	if avail < cols*10 {
+		// ensure at least minimal width, fallback to 10 each
+		avail = cols * 10
+	}
+	base := avail / cols
+	rem := avail % cols
+	out := make([]int, cols)
+	for i := 0; i < cols; i++ {
+		w := base
+		if i < rem {
+			w++
+		}
+		if w < 16 {
+			w = 16
+		}
+		out[i] = w
+	}
+	return out
+}
+
+// renderLabeledCard draws a title line above a bordered box. Content lines are rendered inside.
+func renderLabeledCard(inner int, title string, lines []string) string {
+	if inner < 16 {
+		inner = 16
+	}
+	outer := inner + 2
+	// Title line above box
+	t := strings.TrimSpace(title)
+	if t != "" {
+		tstyled := AccentBold().Render(t)
+		// ANSI-safe width enforcement
+		titleLine := lipgloss.NewStyle().Width(outer).Render(tstyled) + "\n"
+		return titleLine + renderBox(inner, lines)
+	}
+	// No title -> just the box
+	return renderBox(inner, lines)
+}
+
+// renderLabeledCardFixed draws a title line above a bordered box, fixing the
+// content area to exactly innerLines lines (padding or clipping as needed).
+func renderLabeledCardFixed(inner int, title string, lines []string, innerLines int) string {
+	if inner < 16 {
+		inner = 16
+	}
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	outer := inner + 2
+	// Title line above box
+	t := strings.TrimSpace(title)
+	if t != "" {
+		tstyled := AccentBold().Render(t)
+		titleLine := lipgloss.NewStyle().Width(outer).Render(tstyled) + "\n"
+		return titleLine + renderBoxFixed(inner, lines, innerLines)
+	}
+	// No title -> just the box
+	return renderBoxFixed(inner, lines, innerLines)
+}
+
+// renderBox draws a bordered box with given inner width and content lines.
+func renderBox(inner int, lines []string) string {
+	if inner < 1 {
+		inner = 1
+	}
+	// Slight left indent for content
+	padLeft := 2
+	cw := inner - padLeft
+	if cw < 1 {
+		cw = 1
+	}
+	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
+	rows := make([]string, 0, maxInt(1, len(lines)))
+	if len(lines) == 0 {
+		rows = append(rows, contentStyle.Render(""))
+	} else {
+		for _, ln := range lines {
+			rows = append(rows, contentStyle.Render(ln))
+		}
+	}
+	content := strings.Join(rows, "\n")
+	// Card style with border and background
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(Vitesse.Border).
+		Background(Vitesse.Bg).
+		Width(inner)
+	return card.Render(content)
+}
+
+// renderBoxFixed draws a bordered box with given inner width and exactly
+// innerLines content lines, padding/truncating the provided lines.
+func renderBoxFixed(inner int, lines []string, innerLines int) string {
+	if inner < 1 {
+		inner = 1
+	}
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	padLeft := 2
+	cw := inner - padLeft
+	if cw < 1 {
+		cw = 1
+	}
+	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
+	rows := make([]string, innerLines)
+	for i := 0; i < innerLines; i++ {
+		var ln string
+		if i < len(lines) {
+			ln = lines[i]
+		}
+		rows[i] = contentStyle.Render(ln)
+	}
+	content := strings.Join(rows, "\n")
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(Vitesse.Border).
+		Background(Vitesse.Bg).
+		Width(inner).
+		Height(innerLines)
+	return card.Render(content)
+}
+
+// joinCols aligns multiple card blocks horizontally with fixed gap.
+func joinCols(cols []string, innerWidths []int, gap int) string {
+	if len(cols) == 0 {
+		return ""
+	}
+	// Split into lines and compute per-column heights
+	split := make([][]string, len(cols))
+	heights := make([]int, len(cols))
+	outerW := make([]int, len(cols))
+	for i, c := range cols {
+		lines := strings.Split(strings.TrimRight(c, "\n"), "\n")
+		split[i] = lines
+		heights[i] = len(lines)
+		// outer width = inner + 2
+		iw := 16
+		if i < len(innerWidths) {
+			iw = innerWidths[i]
+		}
+		outerW[i] = iw + 2
+	}
+	// Find max height
+	maxH := 0
+	for _, h := range heights {
+		if h > maxH {
+			maxH = h
+		}
+	}
+	var b strings.Builder
+	for row := 0; row < maxH; row++ {
+		for i := range cols {
+			var cell string
+			if row < len(split[i]) {
+				cell = split[i][row]
+			} else {
+				cell = strings.Repeat(" ", outerW[i])
+			}
+			b.WriteString(cell)
+			if i != len(cols)-1 {
+				b.WriteString(strings.Repeat(" ", gap))
+			}
+		}
+		if row != maxH-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// Content providers for cards
+func linesSpecStats(m model) []string {
+	c := m.config
+	lines := []string{}
+	total := c.SpecTotal
+	if total == 0 {
+		lines = append(lines, "暂无 spec")
+		return lines
+	}
+	lines = append(lines, fmt.Sprintf("总数: %d", total))
+	if c.SpecDraft > 0 {
+		lines = append(lines, fmt.Sprintf("Draft: %d", c.SpecDraft))
+	}
+	if c.SpecProposal > 0 {
+		lines = append(lines, fmt.Sprintf("Proposal: %d", c.SpecProposal))
+	}
+	if c.SpecAccepted > 0 {
+		lines = append(lines, fmt.Sprintf("Accepted: %d", c.SpecAccepted))
+	}
+	if c.SpecDeprecated > 0 {
+		lines = append(lines, fmt.Sprintf("Deprecated: %d", c.SpecDeprecated))
+	}
+	if c.SpecRetired > 0 {
+		lines = append(lines, fmt.Sprintf("Retired: %d", c.SpecRetired))
+	}
+	return lines
+}
+
+func linesRecentSpecs(m model) []string {
+	arr := m.config.SpecRecentAccepted
+	if len(arr) == 0 {
+		return []string{"暂无已完成 spec"}
+	}
+	lines := make([]string, 0, len(arr))
+	for _, t := range arr {
+		lines = append(lines, "• "+t)
+	}
+	return lines
+}
+
+// linesRecentSpecsTable renders a small two-column table: [#] [标题]
+func linesRecentSpecsTable(inner int, m model) []string {
+	arr := m.config.SpecRecentAccepted
+	// content width inside card (account for left padding in box)
+	cw := inner - 2
+	if cw < 8 {
+		cw = inner // fallback
+	}
+	headers := []string{"#", "标题"}
+	rows := make([][]string, 0, len(arr))
+	if len(arr) == 0 {
+		rows = append(rows, []string{"-", "暂无已完成 spec"})
+	} else {
+		for i, t := range arr {
+			rows = append(rows, []string{fmt.Sprintf("%d", i+1), t})
+		}
+	}
+	return renderTable(cw, headers, rows)
+}
+
+func linesCliStatus(m model) []string {
+	// Summarize three tools
+	ids := []tools.ToolID{tools.ToolCodex, tools.ToolClaude, tools.ToolGemini}
+	lines := []string{}
+	for _, id := range ids {
+		res, ok := m.results[id]
+		name := string(id)
+		if !ok && m.checking {
+			lines = append(lines, fmt.Sprintf("%-7s: 检测中…", name))
+			continue
+		}
+		if !res.Installed {
+			if res.Latest != "" {
+				lines = append(lines, fmt.Sprintf("%-7s: 未安装 (最新 %s)", name, res.Latest))
+			} else {
+				lines = append(lines, fmt.Sprintf("%-7s: 未安装", name))
+			}
+			continue
+		}
+		ver := res.Version
+		if ver == "" {
+			ver = "(未知版本)"
+		}
+		if res.Latest != "" && isLess(res.Version, res.Latest) {
+			red := lipgloss.NewStyle().Foreground(Vitesse.Red).Render
+			lines = append(lines, fmt.Sprintf("%-7s: %s → %s", name, ver, red(res.Latest)))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%-7s: %s", name, ver))
+	}
+	// CTA line
+	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
+	lines = append(lines, "", btn+"  统一升级 CLI")
+	return lines
+}
+
+// linesCliStatusTable renders a table for codex/claude/gemini status.
+func linesCliStatusTable(inner int, m model) []string {
+	cw := inner - 2
+	if cw < 12 {
+		cw = inner
+	}
+	headers := []string{"工具", "安装", "版本", "最新"}
+	ids := []tools.ToolID{tools.ToolCodex, tools.ToolClaude, tools.ToolGemini}
+	rows := make([][]string, 0, len(ids))
+	for _, id := range ids {
+		res, ok := m.results[id]
+		name := string(id)
+		installed := "×"
+		ver := ""
+		latest := ""
+		if ok {
+			if res.Installed {
+				installed = "✓"
+			}
+			ver = strings.TrimSpace(res.Version)
+			latest = strings.TrimSpace(res.Latest)
+		} else if m.checking {
+			installed = "…"
+		}
+		if ver == "" && installed == "✓" {
+			ver = "(未知)"
+		}
+		rows = append(rows, []string{name, installed, ver, latest})
+	}
+	out := renderTable(cw, headers, rows)
+	// Append CTA line
+	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
+	out = append(out, "", btn+"  统一升级 CLI")
+	return out
+}
+
+// renderTable builds simple left-aligned table lines that fit exactly into cw.
+// It computes per-column widths from content with graceful truncation.
+func renderTable(cw int, headers []string, rows [][]string) []string {
+	if cw < 4 || len(headers) == 0 {
+		// fallback: join cells
+		out := make([]string, 0, len(rows)+1)
+		out = append(out, strings.Join(headers, " "))
+		for _, r := range rows {
+			out = append(out, strings.Join(r, " "))
+		}
+		return out
+	}
+	cols := len(headers)
+	sep := "  "
+	sepW := xansi.StringWidth(sep)
+	avail := cw - sepW*(cols-1)
+	if avail < cols {
+		avail = cols
+	}
+	// desired widths = max width per column from content
+	desired := make([]int, cols)
+	// helper to consider string widths (ANSI-safe)
+	widen := func(i int, s string) {
+		if w := xansi.StringWidth(s); w > desired[i] {
+			desired[i] = w
+		}
+	}
+	for i, h := range headers {
+		widen(i, h)
+	}
+	for _, r := range rows {
+		for i := 0; i < cols && i < len(r); i++ {
+			widen(i, r[i])
+		}
+	}
+	// allocate widths ensuring sum = avail
+	widths := make([]int, cols)
+	remaining := avail
+	remainCols := cols
+	for i := 0; i < cols; i++ {
+		maxForThis := remaining - (remainCols - 1) // leave at least 1 for each remaining col
+		if maxForThis < 1 {
+			maxForThis = 1
+		}
+		w := desired[i]
+		if w > maxForThis {
+			w = maxForThis
+		}
+		if w < 1 {
+			w = 1
+		}
+		widths[i] = w
+		remaining -= w
+		remainCols--
+	}
+	// clip/pad cell to width
+	clip := func(s string, w int) string {
+		if w <= 0 {
+			return ""
+		}
+		sw := xansi.StringWidth(s)
+		if sw == w {
+			return s
+		}
+		if sw < w {
+			return s + strings.Repeat(" ", w-sw)
+		}
+		// trim runes until fit (rough, but ANSI-safe width check below)
+		var b strings.Builder
+		count := 0
+		for _, r := range s {
+			// treat most runes width=1; xansi width used for final padding
+			if count+1 > w {
+				break
+			}
+			b.WriteRune(r)
+			count++
+		}
+		out := b.String()
+		if xansi.StringWidth(out) < w {
+			out += strings.Repeat(" ", w-xansi.StringWidth(out))
+		}
+		return out
+	}
+	// build lines
+	out := make([]string, 0, len(rows)+1)
+	// header (bold)
+	hcells := make([]string, cols)
+	for i, h := range headers {
+		hcells[i] = AccentBold().Render(clip(h, widths[i]))
+	}
+	out = append(out, strings.Join(hcells, sep))
+	// rows
+	for _, r := range rows {
+		cells := make([]string, cols)
+		for i := 0; i < cols; i++ {
+			var val string
+			if i < len(r) {
+				val = r[i]
+			}
+			cells[i] = clip(val, widths[i])
+		}
+		out = append(out, strings.Join(cells, sep))
+	}
+	return out
+}
+
+func linesSlogan() []string {
+	return []string{
+		"Maybe Spec‑Driven Development is all your need",
+		"聚焦规范驱动，工具沉底，协作可验证。",
+	}
+}
+
+func linesModels(m model) []string {
+	if m.config.ModelsCount == 0 || len(m.config.Models) == 0 {
+		return []string{"暂无已选择的模型", zone.Mark("dash.btn.settings", hlButton("打开设置"))}
+	}
+	lines := []string{"已选择模型:"}
+	for _, s := range m.config.Models {
+		lines = append(lines, "• "+s)
+	}
+	return lines
+}
+
+func linesMCP(m model) []string {
+	if m.config.MCPCount == 0 || len(m.config.MCPNames) == 0 {
+		return []string{"暂无 MCP 服务", zone.Mark("dash.btn.settings", hlButton("打开设置"))}
+	}
+	lines := []string{"服务列表:"}
+	for _, n := range m.config.MCPNames {
+		lines = append(lines, "• "+n)
+	}
+	return lines
+}
+
+func renderCard(inner int, title, desc, cta string) string {
+	// border width equals inner content width; top+bottom lines added by caller
+	top := "╭" + strings.Repeat("─", inner) + "╮\n"
+	bot := "╰" + strings.Repeat("─", inner) + "╯\n"
+	// Title emphasized
+	titleStyled := AccentBold().Render(title)
+	// Compose content lines, trim to inner width safely
+	trim := func(s string) string {
+		if xansi.StringWidth(s) <= inner {
+			return s
+		}
+		// naive trim by bytes
+		if len(s) > inner {
+			return s[:inner]
+		}
+		return s
+	}
+	var b strings.Builder
+	b.WriteString(top)
+	// Title line
+	line := "  " + titleStyled
+	pad := inner - xansi.StringWidth(line)
+	if pad < 0 {
+		pad = 0
+	}
+	b.WriteString("│" + trim(line) + strings.Repeat(" ", pad) + "│\n")
+	// Desc line
+	dline := "  " + desc
+	pad = inner - xansi.StringWidth(dline)
+	if pad < 0 {
+		pad = 0
+	}
+	b.WriteString("│" + trim(dline) + strings.Repeat(" ", pad) + "│\n")
+	// CTA line
+	cline := "  " + cta
+	pad = inner - xansi.StringWidth(cline)
+	if pad < 0 {
+		pad = 0
+	}
+	b.WriteString("│" + trim(cline) + strings.Repeat(" ", pad) + "│\n")
+	b.WriteString(bot)
+	return b.String()
+}
+
+// style helper reused in cards
+func hlButton(s string) string {
+	return Button(s)
+}
+
+// Small helpers for version compare (avoid importing tools here)
+func isLess(a, b string) bool { return a != b }

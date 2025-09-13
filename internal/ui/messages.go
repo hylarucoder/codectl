@@ -34,3 +34,9 @@ type gitInfoMsg struct{ info system.GitInfo }
 
 // external exec finished messages (e.g., /codex)
 type codexFinishedMsg struct{ err error }
+
+// config info
+type configInfoMsg struct{ info ConfigInfo }
+
+// external exec finished messages for settings
+type settingsFinishedMsg struct{ err error }

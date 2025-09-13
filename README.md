@@ -126,6 +126,34 @@ codectl demo chat               # 运行聊天消息示例（Viewport + Textarea
 #   go run main.go demo chat
 ```
 
+## Codex 快捷命令
+
+`codectl codex` 等价于直接运行：
+
+```bash
+codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
+```
+
+- 透传参数：在 `codectl codex` 后追加的参数会原样传给 `codex`（通常“后追加的同名参数”会覆盖前面的默认值，具体以 codex 的解析规则为准）。
+- 运行要求：本机已安装 `codex` 且在 `PATH` 中；需要正确配置 `OPENAI_API_KEY` 等环境变量。
+
+示例：
+
+```bash
+# 启动默认设置（gpt-5 + high 推理力度）
+codectl codex
+
+# 查看原生命令帮助（由 codex 输出）
+codectl codex --help
+
+# 覆盖默认模型/参数（依 codex 解析规则，通常最后一个生效）
+codectl codex -m gpt-4.1-mini
+codectl codex -c model_reasoning_effort=medium
+
+# 直接调用 codex 子命令（例如 exec）
+codectl codex exec "为项目生成一份 README 模板"
+```
+
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
 也支持常见别名：
 

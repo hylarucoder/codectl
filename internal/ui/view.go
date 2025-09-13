@@ -6,9 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-    zone "github.com/lrstanley/bubblezone"
+	zone "github.com/lrstanley/bubblezone"
 
-	"codectl/internal/tools"
 	appver "codectl/internal/version"
 )
 
@@ -17,13 +16,16 @@ func (m model) View() string {
 		return "Goodbye!\n"
 	}
 
-	b := &strings.Builder{}
+	// We'll build into a body buffer and then pin the status bar to the bottom.
 	if m.upgrading {
 		// header and tabs
-		b.WriteString(renderBanner(m.cwd, nil))
-		b.WriteString("\n")
-		b.WriteString(renderTabs(m.width, m.activeTab))
-		b.WriteString("\n  codectl — 正在升级 CLI\n\n")
+		var body strings.Builder
+		// top command palette when focused
+		if m.ti.Focused() {
+			body.WriteString(renderCommandPaletteTop(m.width, m.ti.Value(), m.slashFiltered, m.slashIndex))
+		}
+		body.WriteString(renderBanner(m.cwd, nil))
+		body.WriteString("\n  codectl — 正在升级 CLI\n\n")
 
 		// Draw spinner + info + progress bar + count, inspired by package-manager example
 		// current package name
@@ -38,102 +40,102 @@ func (m model) View() string {
 		wnum := lipgloss.Width(fmt.Sprintf("%d", n))
 		pkgCount := fmt.Sprintf(" %*d/%*d", wnum, m.upgradeDone, wnum, n)
 		cellsAvail := maxInt(0, m.width-lipgloss.Width(spin+prog+pkgCount))
-		pkgName := lipgloss.NewStyle().Foreground(lipgloss.Color("211")).Render(current)
+		pkgName := lipgloss.NewStyle().Foreground(Vitesse.Blue).Render(current)
 		info := lipgloss.NewStyle().MaxWidth(cellsAvail).Render("Upgrading " + pkgName)
 		cellsRemaining := maxInt(0, m.width-lipgloss.Width(spin+info+prog+pkgCount))
 		gap := strings.Repeat(" ", cellsRemaining)
-		b.WriteString("  ")
-		b.WriteString(spin + info + gap + prog + pkgCount)
-		b.WriteString("\n\n")
+		body.WriteString("  ")
+		body.WriteString(spin + info + gap + prog + pkgCount)
+		body.WriteString("\n\n")
 
 		// message above input (optional)
 		if m.notice != "" {
-			fmt.Fprintf(b, "  %s\n\n", m.notice)
+			fmt.Fprintf(&body, "  %s\n\n", m.notice)
 		} else if m.lastInput != "" {
-			fmt.Fprintf(b, "  %s\n\n", m.lastInput)
+			fmt.Fprintf(&body, "  %s\n\n", m.lastInput)
 		}
-		b.WriteString(renderInputUI(m.width, m.ti.View()))
-		if !(m.ti.Focused() && m.slashVisible) {
-			b.WriteString(m.renderStatusBarLine())
+		// no persistent input; palette shown at top when focused
+		// pin status bar to bottom
+		viewBody := body.String()
+		bottom := m.renderStatusBarLine() // includes trailing \n
+		// compute padding lines to push bottom bar to last line
+		linesUsed := strings.Count(viewBody, "\n")
+		linesBottom := strings.Count(bottom, "\n")
+		h := m.height
+		if h <= 0 {
+			// fallback when height unknown
+			return zone.Scan(viewBody + bottom)
 		}
-		return b.String()
+		pad := h - linesUsed - linesBottom
+		if pad < 0 {
+			pad = 0
+		}
+		return zone.Scan(viewBody + strings.Repeat("\n", pad) + bottom)
 	}
-	// Build status lines to render inside the banner
-	var status []string
-	status = append(status, "codectl — CLI 版本检测")
-	status = append(status, "")
-	for _, t := range tools.Tools {
-		res, ok := m.results[t.ID]
-		if !ok && m.checking {
-			status = append(status, fmt.Sprintf("  • %-12s: 检测中…", t.ID))
-			continue
-		}
-		if !res.Installed {
-			if res.Err != "" {
-				if res.Latest != "" {
-					status = append(status, fmt.Sprintf("  • %-12s: 未安装 (最新 %s, %s)", t.ID, res.Latest, res.Err))
-				} else {
-					status = append(status, fmt.Sprintf("  • %-12s: 未安装 (%s)", t.ID, res.Err))
-				}
-			} else {
-				if res.Latest != "" {
-					status = append(status, fmt.Sprintf("  • %-12s: 未安装 (最新 %s)", t.ID, res.Latest))
-				} else {
-					status = append(status, fmt.Sprintf("  • %-12s: 未安装", t.ID))
-				}
-			}
-			continue
-		}
-		// Installed
-		ver := res.Version
-		if ver == "" {
-			ver = "(未知版本)"
-		}
-		// show latest and highlight when update available
-		latest := res.Latest
-		if latest == "" {
-			status = append(status, fmt.Sprintf("  • %-12s: %s  [%s]", t.ID, ver, res.Source))
-			continue
-		}
-		if tools.VersionLess(res.Version, latest) {
-			// highlight latest in red if update available
-			red := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render
-			status = append(status, fmt.Sprintf("  • %-12s: %s → %s  [%s]", t.ID, ver, red(latest), res.Source))
-		} else if tools.NormalizeVersion(res.Version) == tools.NormalizeVersion(latest) {
-			// equal to latest; avoid redundant latest notation
-			status = append(status, fmt.Sprintf("  • %-12s: %s  [%s]", t.ID, ver, res.Source))
-		} else {
-			// current version is newer (rare); show both
-			status = append(status, fmt.Sprintf("  • %-12s: %s (最新 %s)  [%s]", t.ID, ver, latest, res.Source))
-		}
+	// Compose body content first; we'll pin status bar at bottom later
+	var body strings.Builder
+	// Single-screen: dash only (remove ASCII banner). Use equal-height rows.
+	paletteLines := 0
+	topPad := 2 // keep two lines breathing room below palette/top
+	if m.ti.Focused() {
+		pal := renderCommandPaletteTop(m.width, m.ti.Value(), m.slashFiltered, m.slashIndex)
+		paletteLines = strings.Count(pal, "\n")
+		body.WriteString(pal)
 	}
+	// visual spacer after palette (or at very top when no palette)
+	body.WriteString("\n\n")
+	// Compute equal row heights.
+	// Reserve space for message block and bottom status bar.
+	msgBlock := 2 // default when no message
+	if m.notice != "" || m.lastInput != "" {
+		msgBlock = 3
+	}
+	// 1 line bottom bar (added later)
+	bottomBar := 1
+	// we insert 2 row separators between the three rows
+	rowSeps := 2
+	h := m.height
+	if h <= 0 {
+		h = 24
+	}
+	avail := h - paletteLines - msgBlock - bottomBar - rowSeps - topPad
+	if avail < 6 {
+		avail = 6
+	}
+	rowTotal := avail / 3
+	if rowTotal < 3 {
+		rowTotal = 3
+	}
+	// Each card content lines = rowTotal - (title + top + bottom)
+	innerLines := rowTotal - 3
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	body.WriteString(renderDashFixed(m, innerLines))
+	body.WriteString("\n")
 
-	b.WriteString(renderBanner(m.cwd, status))
-	// tabs under banner
-	b.WriteString("\n")
-	b.WriteString(renderTabs(m.width, m.activeTab))
-
-	// no "上次更新" display per requirement
 	// message line just above input: prefer notice (if any), else lastInput
-	b.WriteString("\n")
 	if m.notice != "" {
-		fmt.Fprintf(b, "  %s\n\n", m.notice)
+		fmt.Fprintf(&body, "  %s\n\n", m.notice)
 	} else if m.lastInput != "" {
-		fmt.Fprintf(b, "  %s\n\n", m.lastInput)
+		fmt.Fprintf(&body, "  %s\n\n", m.lastInput)
+	} else {
+		body.WriteString("\n")
 	}
-	// Mark input box as a zone for mouse focus
-	inputBox := renderInputUI(m.width, m.ti.View())
-	b.WriteString(zone.Mark("cli.input", inputBox))
-	// slash command overlay
-	if m.ti.Focused() && m.slashVisible {
-		b.WriteString(renderSlashHelp(m.width, m.slashFiltered, m.slashIndex))
+	// No persistent input box on dash or other tabs. Command palette shows at top when focused.
+	// pin status bar to bottom
+	viewBody := body.String()
+	bottom := m.renderStatusBarLine() // includes trailing \n
+	linesUsed := strings.Count(viewBody, "\n")
+	linesBottom := strings.Count(bottom, "\n")
+	if h <= 0 {
+		return zone.Scan(viewBody + bottom)
 	}
-	// status bar just below input (hidden when slash dropdown is visible)
-	if !(m.ti.Focused() && m.slashVisible) {
-		b.WriteString(m.renderStatusBarLine())
+	pad := h - linesUsed - linesBottom
+	if pad < 0 {
+		pad = 0
 	}
-	// no persistent operations hint; shown transiently in status bar
-	return zone.Scan(b.String())
+	return zone.Scan(viewBody + strings.Repeat("\n", pad) + bottom)
 }
 
 // renderStatusBarLine builds the status bar string (one line plus a newline)
@@ -149,7 +151,7 @@ func (m model) renderStatusBarLine() string {
 		rightParts := []string{appver.AppVersion}
 		return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
 	}
-    leftParts := []string{"codectl", now.Format("15:04")}
+	leftParts := []string{"codectl", now.Format("15:04")}
 	// right segments: version + git info (if available)
 	rightParts := []string{"v" + appver.AppVersion}
 	if m.git.InRepo {

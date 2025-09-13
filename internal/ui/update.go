@@ -1,10 +1,10 @@
 package ui
 
 import (
-    "context"
-    "fmt"
-    "strings"
-    "time"
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -12,25 +12,41 @@ import (
 
 	"codectl/internal/system"
 	"codectl/internal/tools"
-    tea "github.com/charmbracelet/bubbletea"
-    zone "github.com/lrstanley/bubblezone"
+	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 )
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    switch msg := msg.(type) {
-    case tea.MouseMsg:
-        // Focus input when clicking on the input zone
-        if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
-            if zone.Get("cli.input").InBounds(msg) {
-                if !m.ti.Focused() {
-                    m.ti.Focus()
-                }
-                m.refreshSlash()
-                return m, nil
-            }
-        }
-        return m, nil
-    case tea.WindowSizeMsg:
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		// Focus input when clicking on the input zone, and handle dash buttons
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			if zone.Get("cli.input").InBounds(msg) {
+				if !m.ti.Focused() {
+					m.ti.Focus()
+				}
+				m.refreshSlash()
+				return m, nil
+			}
+			// Dash buttons (clickable CTAs)
+			if zone.Get("dash.btn.settings").InBounds(msg) {
+				return m, m.execSlashCmd("/settings", "")
+			}
+			if zone.Get("dash.btn.sync").InBounds(msg) {
+				return m, m.execSlashCmd("/sync", "")
+			}
+			if zone.Get("dash.btn.upgrade").InBounds(msg) {
+				return m, func() tea.Msg { return startUpgradeMsg{} }
+			}
+			if zone.Get("dash.btn.doctor").InBounds(msg) {
+				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在诊断…") }, checkAllCmd(), configInfoCmd())
+			}
+			if zone.Get("dash.btn.specui").InBounds(msg) {
+				return m, m.execSlashCmd("/specui", "")
+			}
+		}
+		return m, nil
+	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		inner := msg.Width - 2
@@ -49,45 +65,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
-		// Global tab navigation when input is not focused
+		// Open command palette: Cmd+P / Cmd+Shift+P on mac (if terminal forwards), or Ctrl+P fallback
+		sw := msg.String()
+		if sw == "cmd+p" || sw == "cmd+shift+p" || sw == "shift+cmd+p" || sw == "ctrl+p" || sw == "alt+shift+p" {
+			if !m.ti.Focused() {
+				m.ti.Focus()
+			}
+			m.ti.SetValue("/")
+			m.refreshSlash()
+			return m, nil
+		}
+		// When input is not focused, no tab navigation (single screen). Enter runs quick diagnose.
 		if !m.ti.Focused() {
 			s := msg.String()
 			switch s {
-			case "left", "h":
-				if m.activeTab == tabInstall {
-					m.activeTab = tabClean
-				} else {
-					m.activeTab--
-				}
-				return m, nil
-			case "right", "l", "tab":
-				if m.activeTab == tabClean {
-					m.activeTab = tabInstall
-				} else {
-					m.activeTab++
-				}
-				return m, nil
-			case "shift+tab", "backtab":
-				if m.activeTab == tabInstall {
-					m.activeTab = tabClean
-				} else {
-					m.activeTab--
-				}
-				return m, nil
 			case "enter":
-				return m, m.performActiveTab()
-			case "1":
-				m.activeTab = tabInstall
-				return m, nil
-			case "2":
-				m.activeTab = tabUpdate
-				return m, nil
-			case "3":
-				m.activeTab = tabSync
-				return m, nil
-			case "4":
-				m.activeTab = tabClean
-				return m, nil
+				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
 			}
 		}
 		// When input is not focused, start typing on any rune/space to auto-focus
@@ -166,6 +159,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ti.SetValue("")
 					m.slashVisible = false
 					return m, func() tea.Msg { return quitMsg{} }
+				case "settings":
+					m.ti.SetValue("")
+					m.slashVisible = false
+					return m, m.execSlashCmd("/settings", "")
 				}
 				// execute selection if visible
 				if m.slashVisible && len(m.slashFiltered) > 0 {
@@ -224,6 +221,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noticeMsg:
 		m.notice = string(msg)
 		return m, nil
+	case configInfoMsg:
+		m.config = msg.info
+		return m, nil
 	case startUpgradeMsg:
 		if m.upgrading {
 			return m, nil
@@ -245,7 +245,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.upgradeDone = 0
 		// init spinner and progress
 		sp := spinner.New()
-		sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
+		sp.Style = lipgloss.NewStyle().Foreground(Vitesse.Primary)
 		m.upSpinner = sp
 		pr := progress.New(progress.WithDefaultGradient(), progress.WithWidth(40), progress.WithoutPercentage())
 		m.upProgress = pr
@@ -313,6 +313,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "codex 已退出"
 		}
 		return m, nil
+	case settingsFinishedMsg:
+		if msg.err != nil {
+			m.notice = fmt.Sprintf("设置退出（错误）：%v", msg.err)
+		} else {
+			m.notice = "设置已关闭"
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -334,16 +341,6 @@ func gitInfoCmd(dir string) tea.Cmd {
 
 // performActiveTab triggers the action for the current tab.
 func (m model) performActiveTab() tea.Cmd {
-	switch m.activeTab {
-	case tabInstall:
-		return m.execSlashCmd("/add", "all")
-	case tabUpdate:
-		return m.execSlashCmd("/upgrade", "")
-	case tabSync:
-		return m.execSlashCmd("/sync", "")
-	case tabClean:
-		return m.execSlashCmd("/remove", "all")
-	default:
-		return nil
-	}
+	// Tabs have been removed; keep Enter behavior to re-run checks as a quick action.
+	return tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
 }
