@@ -209,16 +209,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	switch m.page {
-	case pageSelect:
-		title := lipgloss.NewStyle().Bold(true).Render("选择一个规范文件 (Enter 确认，Ctrl+C 退出)")
-		help := "来源：vibe-docs/spec/*.spec.mdx"
-		return strings.Join([]string{
-			title,
-			"",
-			m.table.View(),
-			"",
-			help,
-		}, "\n")
+    case pageSelect:
+        title := lipgloss.NewStyle().Bold(true).Render("选择一个规范文件 (Enter 确认，Ctrl+C 退出)")
+        help := "来源：vibe-docs/spec/*.spec.mdx"
+        return strings.Join([]string{
+            title,
+            "",
+            m.table.View(),
+            "",
+            help,
+            "",
+            m.renderWorkbar(),
+        }, "\n")
 	case pageDetail:
 		// top: split left (md) and right (log)
 		left := boxStyle.Render(m.mdVP.View())
@@ -432,16 +434,29 @@ func parseFrontmatterTitle(path string) string {
 
 // work/status bar at bottom using lipgloss
 func (m model) renderWorkbar() string {
-	// left segments
+	// left segments depend on current page
 	left := []string{}
-	if m.selected != nil {
-		left = append(left, filepath.Base(m.selected.Path))
+	if m.page == pageSelect {
+		label := "No files"
+		if len(m.items) > 0 {
+			cur := m.table.Cursor()
+			if cur >= 0 && cur < len(m.items) {
+				label = relFrom(m.root, m.items[cur].Path)
+			}
+		}
+		left = append(left, label)
+		left = append(left, "↑/↓ 选择")
+		left = append(left, "Enter 打开")
 	} else {
-		left = append(left, "No file selected")
+		if m.selected != nil {
+			left = append(left, filepath.Base(m.selected.Path))
+		} else {
+			left = append(left, "No file selected")
+		}
+		left = append(left, "↵ 记录")
+		left = append(left, "r 载入")
+		left = append(left, "Esc 返回")
 	}
-	left = append(left, "↵ 记录")
-	left = append(left, "r 载入")
-	left = append(left, "Esc 返回")
 	// right segments
 	right := []string{}
 	if !m.now.IsZero() {
