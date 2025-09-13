@@ -595,7 +595,7 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 		if err != nil {
 			return renderDoneMsg{Path: path, Width: width, Err: err.Error()}
 		}
-		content := string(b)
+		content := stripFrontmatter(string(b))
 		var modUnix int64
 		var size int64
 		if statErr == nil && fi != nil {
@@ -604,7 +604,7 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 		}
 		fast := forceFast || len(b) >= fastThresholdBytes
 		if fast {
-			return renderDoneMsg{Path: path, Width: width, Out: stripFrontmatter(content), ModUnix: modUnix, Size: size}
+			return renderDoneMsg{Path: path, Width: width, Out: trimEdgeBlankLines(content), ModUnix: modUnix, Size: size}
 		}
 		// Match demo rendering: subtract Glamour gutter from wrap width
 		const glamourGutter = 2
@@ -617,9 +617,9 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 			glamour.WithWordWrap(wrap),
 		)
 		if out, err := r.Render(content); err == nil {
-			return renderDoneMsg{Path: path, Width: width, Out: out, ModUnix: modUnix, Size: size}
+			return renderDoneMsg{Path: path, Width: width, Out: trimEdgeBlankLines(out), ModUnix: modUnix, Size: size}
 		}
-		return renderDoneMsg{Path: path, Width: width, Out: content, ModUnix: modUnix, Size: size}
+		return renderDoneMsg{Path: path, Width: width, Out: trimEdgeBlankLines(content), ModUnix: modUnix, Size: size}
 	}
 }
 
@@ -789,6 +789,25 @@ func stripFrontmatter(s string) string {
 		return s
 	}
 	return strings.Join(lines[end+1:], "\n")
+}
+
+// trimEdgeBlankLines removes leading and trailing blank lines from a string
+// while preserving inner spacing and ANSI sequences.
+func trimEdgeBlankLines(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	lines := strings.Split(s, "\n")
+	i := 0
+	for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+		i++
+	}
+	j := len(lines) - 1
+	for j >= i && strings.TrimSpace(lines[j]) == "" {
+		j--
+	}
+	if i == 0 && j == len(lines)-1 {
+		return s
+	}
+	return strings.Join(lines[i:j+1], "\n")
 }
 
 func (m *model) refreshTableRows() {
