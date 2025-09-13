@@ -128,6 +128,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.table.SetHeight(h)
 		} else {
 			m.recalcViewports()
+			// rebuild renderer for new width and re-render only when in detail view
+			if m.selected != nil {
+				m.buildRenderer()
+				m.reloadContent()
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -303,11 +308,7 @@ func (m *model) recalcViewports() {
 	// input width adjust
 	m.ti.Width = m.width - 6
 
-	// rebuild renderer for new width and re-render content
-	m.buildRenderer()
-	if m.selected != nil {
-		m.reloadContent()
-	}
+	// viewport-only adjustments; caller decides whether to rerender
 }
 
 func (m *model) buildRenderer() {
