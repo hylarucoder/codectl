@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+    "unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,9 +20,10 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/charmbracelet/x/cellbuf"
+	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
 	"syscall"
+    runewidth "github.com/mattn/go-runewidth"
 
 	"codectl/internal/system"
 )
@@ -71,8 +73,7 @@ type model struct {
 	termMode   bool
 	cmdRunning bool
 	pty        xpty.Pty
-	termScr    *cellbuf.Screen
-	termWr     *cellbuf.ScreenWriter
+	termVT     *vt.Emulator
 	termFocus  bool
 	termDirty  bool
 	// markdown cache: path -> width -> entry
@@ -155,39 +156,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected != nil {
 				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 			}
-			// resize PTY and cell screen if terminal mode is on
-			if m.termMode && m.pty != nil {
-				cols, rows := m.termSize()
-				_ = m.pty.Resize(cols, rows)
-				// reset screen to new size
-				scr := cellbuf.NewScreen(nil, cols, rows, &cellbuf.ScreenOptions{Term: "xterm-256color"})
-				m.termScr = scr
-				m.termWr = cellbuf.NewScreenWriter(scr)
-			}
+            // resize PTY and VT emulator if terminal mode is on
+            if m.termMode && m.pty != nil {
+                cols, rows := m.termSize()
+                _ = m.pty.Resize(cols, rows)
+                if m.termVT != nil {
+                    m.termVT.Resize(cols, rows)
+                    // refresh render after resize
+                    m.termDirty = true
+                }
+            }
 		}
 		return m, nil
-	case tea.KeyMsg:
-		// when terminal has focus, forward most keys to PTY
-		if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
-			// Special-case focus management and program quit
-			switch msg.String() {
-			case "esc":
-				// exit terminal focus back to input
-				m.termFocus = false
-				return m, nil
-			case "ctrl+c":
-				// send SIGINT to PTY instead of quitting app
-				return m, writePTYCmd(m.pty, []byte{0x03})
-			case "ctrl+l":
-				return m, writePTYCmd(m.pty, []byte{0x0c})
-			case "ctrl+z":
-				return m, writePTYCmd(m.pty, []byte{0x1a})
-			}
-			if data := keyToPTYBytes(msg); len(data) > 0 {
-				return m, writePTYCmd(m.pty, data)
-			}
-			return m, nil
-		}
+    case tea.KeyMsg:
+        // when terminal has focus, forward keys directly to PTY
+        if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
+            // focus escape and app quit
+            switch msg.String() {
+            case "esc":
+                // exit terminal focus back to input
+                m.termFocus = false
+                return m, nil
+            case "ctrl+c":
+                return m, writePTYCmd(m.pty, []byte{0x03})
+            case "ctrl+l":
+                return m, writePTYCmd(m.pty, []byte{0x0c})
+            case "ctrl+z":
+                return m, writePTYCmd(m.pty, []byte{0x1a})
+            }
+            if data := keyToPTYBytes(msg); len(data) > 0 {
+                return m, writePTYCmd(m.pty, data)
+            }
+            return m, nil
+        }
 		// global quit when not in terminal focus
 		if key := msg.String(); key == "ctrl+c" || key == "q" {
 			return m, tea.Quit
@@ -251,27 +252,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case pageDetail:
 			switch msg.String() {
-			case "tab":
-				if m.termMode && m.pty != nil {
-					m.termFocus = !m.termFocus
-					if m.termFocus {
-						m.ti.Blur()
-					} else {
-						m.ti.Focus()
-					}
-					return m, nil
-				}
-			case "esc":
-				// back to list
-				m.page = pageSelect
-				m.ti.Blur()
-				m.statusMsg = ""
-				// stop PTY if running
-				if m.pty != nil {
-					_ = m.pty.Close()
-					m.pty = nil
-				}
-				return m, nil
+            case "tab":
+                if m.termMode && m.pty != nil {
+                    m.termFocus = !m.termFocus
+                    if m.termFocus {
+                        m.ti.Blur()
+                    } else {
+                        m.ti.Focus()
+                    }
+                    // re-render to show/hide terminal cursor overlay
+                    m.termDirty = true
+                    return m, nil
+                }
+            case "esc":
+                // back to list
+                m.page = pageSelect
+                m.ti.Blur()
+                m.statusMsg = ""
+                // stop PTY if running
+                if m.pty != nil {
+                    _ = m.pty.Close()
+                    m.pty = nil
+                }
+                if m.termVT != nil {
+                    _ = m.termVT.Close()
+                    m.termVT = nil
+                }
+                return m, nil
 			case "r":
 				// reload md (async)
 				if m.selected != nil {
@@ -287,36 +294,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 				}
 				return m, nil
-			case "t":
-				// toggle terminal mode (right pane behavior)
-				m.termMode = !m.termMode
-				if m.termMode && m.pty == nil {
-					// start persistent PTY session
-					cols, rows := m.termSize()
-					return m, startPTYCmd(m.cwd, cols, rows)
-				}
-				if !m.termMode && m.pty != nil {
-					_ = m.pty.Close()
-					m.pty = nil
-				}
-				return m, nil
+            case "t":
+                // toggle terminal mode (right pane behavior)
+                m.termMode = !m.termMode
+                if m.termMode && m.pty == nil {
+                    // start persistent PTY session
+                    cols, rows := m.termSize()
+                    return m, startPTYCmd(m.cwd, cols, rows)
+                }
+                if !m.termMode && m.pty != nil {
+                    _ = m.pty.Close()
+                    m.pty = nil
+                    if m.termVT != nil {
+                        _ = m.termVT.Close()
+                        m.termVT = nil
+                    }
+                }
+                return m, nil
 			}
 			// input handling
-			if msg.Type == tea.KeyEnter && m.ti.Focused() {
-				val := strings.TrimSpace(m.ti.Value())
-				if m.termMode && m.pty != nil {
-					if val == "" {
-						return m, nil
-					}
-					// echo input into screen like a terminal prompt
-					m.logs = append(m.logs, ">$ "+val)
-					m.logVP.SetContent(strings.Join(m.logs, "\n"))
-					m.logVP.GotoBottom()
-					// write to PTY
-					line := val + "\n"
-					m.ti.SetValue("")
-					return m, writePTYCmd(m.pty, []byte(line))
-				}
+            if msg.Type == tea.KeyEnter && m.ti.Focused() {
+                val := strings.TrimSpace(m.ti.Value())
+                if m.termMode && m.pty != nil {
+                    if val == "" {
+                        return m, nil
+                    }
+                    // write to PTY (use CR to mimic Enter)
+                    line := val + "\r"
+                    m.ti.SetValue("")
+                    return m, writePTYCmd(m.pty, []byte(line))
+                }
 				// chat mode: append to log
 				if val != "" {
 					stamp := time.Now().Format("15:04:05")
@@ -347,37 +354,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logVP.SetContent(strings.Join(m.logs, "\n"))
 		m.termMode = false
 		return m, nil
-	case ptyStartedMsg:
-		// initialize cell screen for right pane
-		cols, rows := m.termSize()
-		scr := cellbuf.NewScreen(nil, cols, rows, &cellbuf.ScreenOptions{Term: "xterm-256color"})
-		wr := cellbuf.NewScreenWriter(scr)
-		m.pty = msg.Pty
-		m.termScr = scr
-		m.termWr = wr
-		// kick off first read
-		return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
-	case ptyChunkMsg:
-		if m.termWr != nil && len(msg.Data) > 0 {
-			_, _ = m.termWr.Write(msg.Data)
-			// render screen into viewport
-			m.termDirty = true
-		}
-		// schedule next read while PTY exists
-		if m.pty != nil {
-			return m, readPTYOnceCmd(m.pty)
-		}
-		return m, nil
-	case termRenderTickMsg:
-		if m.termMode && m.pty != nil {
-			if m.termDirty && m.termScr != nil {
-				m.logVP.SetContent(cellbuf.Render(m.termScr))
-				m.termDirty = false
-			}
-			// continue ticking
-			return m, termTickCmd()
-		}
-		return m, nil
+    case ptyStartedMsg:
+        // initialize VT emulator for right pane
+        cols, rows := m.termSize()
+        emu := vt.NewEmulator(cols, rows)
+        m.pty = msg.Pty
+        m.termVT = emu
+        // kick off first PTY read and render tick
+        return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
+    case ptyChunkMsg:
+        if m.termVT != nil && len(msg.Data) > 0 {
+            _, _ = m.termVT.Write(msg.Data)
+            // mark dirty to re-render into viewport
+            m.termDirty = true
+        }
+        // schedule next read while PTY exists
+        if m.pty != nil {
+            return m, readPTYOnceCmd(m.pty)
+        }
+        return m, nil
+    case termRenderTickMsg:
+        if m.termMode && m.pty != nil {
+            if m.termVT != nil && (m.termDirty || m.termFocus) {
+                m.logVP.SetContent(renderVTRightPane(&m))
+                m.termDirty = false
+            }
+            // continue ticking
+            return m, termTickCmd()
+        }
+        return m, nil
 	case termDoneMsg:
 		// legacy one-shot command result (kept for fallback)
 		m.cmdRunning = false
@@ -693,7 +698,11 @@ func writePTYCmd(p xpty.Pty, data []byte) tea.Cmd {
 	}
 }
 
-// keyToPTYBytes maps Bubble Tea KeyMsg into terminal byte sequences
+// (no VT input pumping; keys write directly to PTY)
+
+// (VT key mapping removed; we directly convert keys to PTY bytes below)
+
+// keyToVTEvents maps Bubble Tea KeyMsg into VT key events
 func keyToPTYBytes(k tea.KeyMsg) []byte {
 	// runes typing
 	if k.Type == tea.KeyRunes && len(k.Runes) > 0 {
@@ -968,4 +977,102 @@ func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
 		pad = 0
 	}
 	return lstr + strings.Repeat(" ", pad) + rstr
+}
+
+// renderVTRightPane renders VT screen to string, and when terminal has focus
+// overlays a visible cursor at the emulator cursor position by inverting the
+// cell at that position. This is a presentation-only overlay; it does not
+// mutate the emulator state.
+func renderVTRightPane(m *model) string {
+    if m.termVT == nil {
+        return ""
+    }
+    out := m.termVT.Render()
+    if !m.termFocus {
+        return out
+    }
+    // Cursor column/row
+    pos := m.termVT.CursorPosition()
+    cx, cy := pos.X, pos.Y
+    if cx < 0 { cx = 0 }
+    if cy < 0 { cy = 0 }
+    lines := strings.Split(out, "\r\n")
+    // ensure enough lines
+    for len(lines) <= cy {
+        lines = append(lines, "")
+    }
+    lines[cy] = overlayCursorOnAnsiLine(lines[cy], cx)
+    return strings.Join(lines, "\r\n")
+}
+
+// overlayCursorOnAnsiLine returns the line with an inverse-video cursor at
+// the given column. It preserves existing ANSI SGR sequences and counts
+// display width correctly across runes. If the column is past the end, pads
+// spaces and appends an inverse space.
+func overlayCursorOnAnsiLine(line string, col int) string {
+    if col < 0 { col = 0 }
+    // Fast path: if no ANSI and short
+    // Walk the string tracking visible column, skipping ANSI sequences
+    var b strings.Builder
+    b.Grow(len(line) + 16)
+    visible := 0
+    i := 0
+    for i < len(line) {
+        if line[i] == 0x1b { // ESC ... CSI or SGR
+            j := i + 1
+            if j < len(line) && (line[j] == '[' || line[j] == ']' || line[j] == '(' || line[j] == ')' || line[j] == 'P') {
+                j++
+                for j < len(line) {
+                    ch := line[j]
+                    // OSC (ESC]) ends with BEL (0x07) or ST (ESC\)
+                    if line[i+1] == ']' {
+                        if ch == 0x07 { j++; break }
+                        if ch == '\\' && j > i+1 && line[j-1] == 0x1b { j++; break }
+                    }
+                    // CSI/other: final byte in 0x40..0x7E
+                    if ch >= 0x40 && ch <= 0x7e {
+                        j++
+                        break
+                    }
+                    j++
+                }
+            }
+            b.WriteString(line[i:j])
+            i = j
+            continue
+        }
+        r, sz := utf8.DecodeRuneInString(line[i:])
+        if r == utf8.RuneError && sz == 1 {
+            // write raw byte
+            if visible == col {
+                b.WriteString("\x1b[7m")
+                b.WriteByte(line[i])
+                b.WriteString("\x1b[27m")
+            } else {
+                b.WriteByte(line[i])
+            }
+            visible++
+            i++
+            continue
+        }
+        width := runewidth.RuneWidth(r)
+        if width <= 0 { width = 1 }
+        if visible == col {
+            b.WriteString("\x1b[7m")
+            b.WriteString(line[i : i+sz])
+            b.WriteString("\x1b[27m")
+        } else {
+            b.WriteString(line[i : i+sz])
+        }
+        visible += width
+        i += sz
+    }
+    if col >= visible {
+        // pad spaces up to col, then inverse a space
+        if pad := col - visible; pad > 0 {
+            b.WriteString(strings.Repeat(" ", pad))
+        }
+        b.WriteString("\x1b[7m \x1b[27m")
+    }
+    return b.String()
 }
