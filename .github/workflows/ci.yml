@@ -16,10 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Go
+      - name: Setup Go 1.25.1
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.25.1'
 
       - name: Go env
         run: go env
@@ -42,4 +42,3 @@ jobs:
         with:
           name: coverage
           path: coverage.out
-
