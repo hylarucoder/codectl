@@ -150,13 +150,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx >= 0 && idx < len(m.items) {
 					it := m.items[idx]
 					m.selected = &it
-					m.buildRenderer()
 					m.page = pageDetail
 					m.ti.Focus()
-					m.statusMsg = "已进入详情视图。按 Esc 返回"
-					// load content
-					m.reloadContent()
+					// layout first so content isn't lost when creating viewports
 					m.recalcViewports()
+					m.buildRenderer()
+					m.reloadContent()
+					m.statusMsg = "已进入详情视图。按 Esc 返回"
 				}
 				return m, nil
 			}
@@ -209,18 +209,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	switch m.page {
-    case pageSelect:
-        title := lipgloss.NewStyle().Bold(true).Render("选择一个规范文件 (Enter 确认，Ctrl+C 退出)")
-        help := "来源：vibe-docs/spec/*.spec.mdx"
-        return strings.Join([]string{
-            title,
-            "",
-            m.table.View(),
-            "",
-            help,
-            "",
-            m.renderWorkbar(),
-        }, "\n")
+	case pageSelect:
+		title := lipgloss.NewStyle().Bold(true).Render("选择一个规范文件 (Enter 确认，Ctrl+C 退出)")
+		help := "来源：vibe-docs/spec/*.spec.mdx"
+		return strings.Join([]string{
+			title,
+			"",
+			m.table.View(),
+			"",
+			help,
+			"",
+			m.renderWorkbar(),
+		}, "\n")
 	case pageDetail:
 		// top: split left (md) and right (log)
 		left := boxStyle.Render(m.mdVP.View())
