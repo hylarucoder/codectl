@@ -1,11 +1,10 @@
 package cli
 
 import (
-    "fmt"
-
     "github.com/spf13/cobra"
 
     "codectl/internal/provider"
+    "codectl/internal/system"
 )
 
 func init() {
@@ -25,9 +24,8 @@ var providerSyncCmd = &cobra.Command{
             return err
         }
         p, _ := provider.Path()
-        fmt.Printf("同步完成：%s\n", p)
-        fmt.Printf("models: %d, mcp: %d\n", len(cfg.Models), len(cfg.MCP))
-        fmt.Println("可手动编辑该文件以自定义清单。")
+        system.Logger.Info("同步完成", "path", p, "models", len(cfg.Models), "mcp", len(cfg.MCP))
+        system.Logger.Info("可手动编辑该文件以自定义清单。")
         return nil
     },
 }

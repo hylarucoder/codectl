@@ -12,8 +12,8 @@ import (
 // Catalog represents a simple provider catalog file.
 // Default JSON path: ~/.codectl/provider.json
 type Catalog struct {
-    Models []string `json:"models"`
-    MCP    []string `json:"mcp"`
+    Models []string `json:"models" jsonschema:"title=Models,description=Remote model identifiers used by codectl ls-remote and related commands,example=kimi-k2-0905-preview"`
+    MCP    []string `json:"mcp" jsonschema:"title=MCP Servers,description=Remote MCP server identifiers discoverable by codectl,example=figma-developer-mcp"`
 }
 
 // defaultCatalog holds a minimal built-in fallback.

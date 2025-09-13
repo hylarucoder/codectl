@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"fmt"
-	"os"
+    "os"
 
-	"github.com/spf13/cobra"
+    "github.com/spf13/cobra"
 
-	"codectl/internal/app"
+    "codectl/internal/app"
+    "codectl/internal/system"
 )
 
 var rootCmd = &cobra.Command{
@@ -23,8 +23,8 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the CLI.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+    if err := rootCmd.Execute(); err != nil {
+        system.Logger.Error("command execution failed", "err", err)
+        os.Exit(1)
+    }
 }

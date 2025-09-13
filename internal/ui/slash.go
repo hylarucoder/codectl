@@ -1,17 +1,18 @@
 package ui
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"time"
+    "context"
+    "fmt"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strings"
+    "time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	xansi "github.com/charmbracelet/x/ansi"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/lipgloss"
+    xansi "github.com/charmbracelet/x/ansi"
+    fuzzy "github.com/sahilm/fuzzy"
 
 	"codectl/internal/system"
 	"codectl/internal/tools"
@@ -24,20 +25,22 @@ type SlashCmd struct {
 }
 
 var slashCmds = []SlashCmd{
-	{Name: "/add-dir", Desc: "Add a new working directory"},
-	{Name: "/agents", Desc: "Manage agent configurations"},
-	{Name: "/bashes", Desc: "List and manage background tasks"},
-	{Name: "/clear", Aliases: []string{"/reset", "/new"}, Desc: "Clear conversation history and free up context"},
-	{Name: "/compact", Desc: "Clear history but keep a summary"},
-	{Name: "/config", Aliases: []string{"/theme"}, Desc: "Open config panel"},
-	{Name: "/context", Desc: "Visualize current context usage"},
-	{Name: "/cost", Desc: "Show total cost and duration"},
-	{Name: "/doctor", Desc: "Diagnose and verify installation"},
-	{Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
-	{Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
-	{Name: "/status", Desc: "Show current status for tools"},
-	{Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
-	{Name: "/task", Desc: "Create vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx"},
+    {Name: "/add-dir", Desc: "Add a new working directory"},
+    {Name: "/agents", Desc: "Manage agent configurations"},
+    {Name: "/bashes", Desc: "List and manage background tasks"},
+    {Name: "/clear", Aliases: []string{"/reset", "/new"}, Desc: "Clear conversation history and free up context"},
+    {Name: "/compact", Desc: "Clear history but keep a summary"},
+    {Name: "/config", Aliases: []string{"/theme"}, Desc: "Open config panel"},
+    {Name: "/context", Desc: "Visualize current context usage"},
+    {Name: "/cost", Desc: "Show total cost and duration"},
+    {Name: "/doctor", Desc: "Diagnose and verify installation"},
+    {Name: "/add", Desc: "Install supported CLIs (all|codex|claude|gemini)"},
+    {Name: "/remove", Desc: "Uninstall supported CLIs"},
+    {Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
+    {Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
+    {Name: "/status", Desc: "Show current status for tools"},
+    {Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
+    {Name: "/task", Desc: "Create vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx"},
 	{Name: "/spec", Desc: "Generate spec via Codex and save to vibe-docs/spec"},
 }
 
@@ -65,26 +68,46 @@ func (m *model) refreshSlash() {
 }
 
 func filterSlashCommands(prefix string) []SlashCmd {
-	// Show all when prefix is just '/'
-	if prefix == "/" {
-		return slashCmds
-	}
-	res := make([]SlashCmd, 0, len(slashCmds))
-	p := strings.ToLower(prefix)
-	for _, c := range slashCmds {
-		if strings.HasPrefix(strings.ToLower(c.Name), p) {
-			res = append(res, c)
-			continue
-		}
-		for _, a := range c.Aliases {
-			if strings.HasPrefix(strings.ToLower(a), p) {
-				res = append(res, c)
-				break
-			}
-		}
-	}
-	// Do not fallback to all; empty means 'no matches'
-	return res
+    // Show all when prefix is just '/'
+    if prefix == "/" {
+        return slashCmds
+    }
+    // Fuzzy match on Name and Aliases (case-insensitive)
+    q := strings.ToLower(strings.TrimSpace(prefix))
+    if q == "" {
+        return slashCmds
+    }
+    // Build candidate list mapping every name/alias to its command
+    cand := make([]string, 0, len(slashCmds)*2)
+    idx := make(map[string]SlashCmd, len(slashCmds)*2)
+    for _, c := range slashCmds {
+        key := strings.ToLower(c.Name)
+        cand = append(cand, key)
+        idx[key] = c
+        for _, a := range c.Aliases {
+            ak := strings.ToLower(a)
+            cand = append(cand, ak)
+            idx[ak] = c
+        }
+    }
+    // Run fuzzy search over lowercased candidates
+    matches := fuzzy.Find(q, cand)
+    if len(matches) == 0 {
+        return nil
+    }
+    // Deduplicate to canonical command order while preserving match ranking
+    out := make([]SlashCmd, 0, len(matches))
+    seen := map[string]bool{}
+    for _, m := range matches {
+        s := cand[m.Index]
+        c := idx[s]
+        if seen[c.Name] {
+            continue
+        }
+        out = append(out, c)
+        seen[c.Name] = true
+    }
+    return out
 }
 
 func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
@@ -176,23 +199,109 @@ func (m model) execSlashLine(line string) tea.Cmd {
 
 // execSlashCmd executes a slash command by name and optional args.
 func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
-	c := canonicalSlash(cmd)
-	switch c {
-	case "/exit", "/quit":
-		return func() tea.Msg { return quitMsg{} }
-	case "/clear", "/reset", "/new":
-		return func() tea.Msg { return noticeMsg("已清空会话（占位实现）") }
-	case "/doctor":
-		// Trigger re-check and show notice
-		return tea.Batch(
-			func() tea.Msg { return noticeMsg("正在运行诊断…") },
-			checkAllCmd(),
-		)
-	case "/status":
-		return func() tea.Msg {
-			// Build a concise one-line status summary
-			parts := make([]string, 0, len(slashCmds))
-			for _, t := range tools.Tools {
+    c := canonicalSlash(cmd)
+    switch c {
+    case "/exit", "/quit":
+        return func() tea.Msg { return quitMsg{} }
+    case "/clear", "/reset", "/new":
+        return func() tea.Msg { return noticeMsg("已清空会话（占位实现）") }
+    case "/doctor":
+        // Trigger re-check and show notice
+        return tea.Batch(
+            func() tea.Msg { return noticeMsg("正在运行诊断…") },
+            checkAllCmd(),
+        )
+    case "/add":
+        // Install specified or all tools via npm, similar to `codectl cli add`
+        sel := selectToolsFromArgString(args)
+        if len(sel) == 0 {
+            return func() tea.Msg { return noticeMsg("未选择任何工具（用法：/add all|codex|claude|gemini...）") }
+        }
+        return tea.Batch(
+            func() tea.Msg { return noticeMsg("正在安装所选工具…（请稍候）") },
+            func() tea.Msg {
+                var b strings.Builder
+                for i, t := range sel {
+                    fmt.Fprintf(&b, "[%d/%d] %s 安装中…\n", i+1, len(sel), t.DisplayName)
+                    res := tools.CheckTool(t)
+                    if res.Installed {
+                        ver := res.Version
+                        if strings.TrimSpace(ver) == "" {
+                            ver = "已安装"
+                        }
+                        fmt.Fprintf(&b, "  • 跳过：%s\n", ver)
+                        continue
+                    }
+                    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+                    err := tools.NpmUpgradeLatest(ctx, t.Package)
+                    cancel()
+                    if err != nil {
+                        fmt.Fprintf(&b, "  × 安装失败：%v\n", err)
+                        continue
+                    }
+                    // Recheck and report
+                    res2 := tools.CheckTool(t)
+                    ver := strings.TrimSpace(res2.Version)
+                    if ver == "" {
+                        if res2.Latest != "" {
+                            ver = res2.Latest
+                        } else {
+                            ver = "latest"
+                        }
+                    }
+                    fmt.Fprintf(&b, "  ✓ 安装成功 → %s\n", ver)
+                }
+                return noticeMsg(b.String())
+            },
+        )
+    case "/remove":
+        // Uninstall specified or all tools via npm, similar to `codectl cli remove`
+        sel := selectToolsFromArgString(args)
+        if len(sel) == 0 {
+            return func() tea.Msg { return noticeMsg("未选择任何工具（用法：/remove all|codex|claude|gemini...）") }
+        }
+        return tea.Batch(
+            func() tea.Msg { return noticeMsg("正在卸载所选工具…（请稍候）") },
+            func() tea.Msg {
+                var b strings.Builder
+                for i, t := range sel {
+                    fmt.Fprintf(&b, "[%d/%d] %s 卸载中…\n", i+1, len(sel), t.DisplayName)
+                    res := tools.CheckTool(t)
+                    if !res.Installed {
+                        fmt.Fprintf(&b, "  • 未安装，跳过\n")
+                        continue
+                    }
+                    if strings.TrimSpace(t.Package) == "" {
+                        fmt.Fprintf(&b, "  • 未配置 npm 包名，无法卸载，跳过\n")
+                        continue
+                    }
+                    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+                    err := tools.NpmUninstallGlobal(ctx, t.Package)
+                    cancel()
+                    if err != nil {
+                        fmt.Fprintf(&b, "  × 卸载失败：%v\n", err)
+                        continue
+                    }
+                    // Recheck
+                    res2 := tools.CheckTool(t)
+                    if res2.Installed {
+                        note := "仍检测到已安装"
+                        if strings.TrimSpace(res2.Source) != "" {
+                            note += fmt.Sprintf("（来源：%s）", res2.Source)
+                        }
+                        fmt.Fprintf(&b, "  • %s\n", note)
+                    } else {
+                        fmt.Fprintf(&b, "  ✓ 卸载成功\n")
+                    }
+                }
+                return noticeMsg(b.String())
+            },
+        )
+    case "/status":
+        return func() tea.Msg {
+            // Build a concise one-line status summary
+            parts := make([]string, 0, len(slashCmds))
+            for _, t := range tools.Tools {
 				res, ok := m.results[t.ID]
 				if !ok && m.checking {
 					parts = append(parts, fmt.Sprintf("%s: 检测中…", t.ID))
@@ -496,4 +605,52 @@ func runCodex(bin string, prompt string, timeout time.Duration) (string, error) 
 		}
 		return string(out), nil
 	}
+}
+
+// selectToolsFromArgString converts a space-separated args string into a slice of ToolInfo.
+// Accepts: empty (defaults to all), or any of: all, codex, claude, gemini.
+func selectToolsFromArgString(args string) []tools.ToolInfo {
+    s := strings.TrimSpace(args)
+    if s == "" {
+        return tools.Tools
+    }
+    parts := strings.Fields(s)
+    m := map[string]bool{}
+    for _, p := range parts {
+        pp := strings.TrimSpace(strings.ToLower(p))
+        if pp == "" {
+            continue
+        }
+        m[pp] = true
+    }
+    if m["all"] {
+        return tools.Tools
+    }
+    sel := make([]tools.ToolInfo, 0, len(tools.Tools))
+    for _, t := range tools.Tools {
+        id := strings.ToLower(string(t.ID))
+        names := []string{
+            id,
+            strings.ToLower(t.DisplayName),
+        }
+        switch t.ID {
+        case tools.ToolCodex:
+            names = append(names, "codex", "openai", "openai-codex")
+        case tools.ToolClaude:
+            names = append(names, "claude", "claude-code", "anthropic")
+        case tools.ToolGemini:
+            names = append(names, "gemini", "google")
+        }
+        matched := false
+        for _, n := range names {
+            if m[n] {
+                matched = true
+                break
+            }
+        }
+        if matched {
+            sel = append(sel, t)
+        }
+    }
+    return sel
 }

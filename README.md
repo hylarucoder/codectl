@@ -57,15 +57,8 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 ## 用法
 
 ```bash
-# CLI 工具管理（默认 all，可选 codex|claude|gemini）
-codectl cli add                 # 安装全部
-codectl cli add claude          # 仅安装 Claude Code
-
-codectl cli remove              # 卸载全部
-codectl cli remove claude       # 仅卸载 Claude Code
-
-codectl cli update              # 升级全部
-codectl cli update gemini       # 仅升级 Gemini CLI
+# CLI 工具管理（TUI）
+codectl cli                     # 打开 CLI 管理 TUI（支持 /add、/remove、/upgrade 等）
 
 # 自更新（占位，暂未实现自动下载）
 codectl update                  # 未来将从 GitHub Releases 自更新
@@ -89,10 +82,10 @@ codectl model add kimi-k2-0905-preview kimi-k2-0711-preview
 codectl model remove kimi-k2-0905-preview
 
 # 工具与 MCP 清单
-codectl cli ls                  # 列出受支持工具状态（已装/版本/可升级）
+# 已集成到 TUI 的状态面板中
 codectl mcp ls                  # 列出本地 MCP 服务端
 codectl mcp ls-remote           # 列出远端可用 MCP 服务端（占位）
-codectl cli ls-remote           # 列出受支持工具的远端最新版本（npm）
+// 远端最新版本展示亦可通过 TUI 升级检查查看
 
 # 远端清单来源（provider.json）
 # ls-remote 命令会优先从 ~/.codectl/provider.json 读取：
@@ -105,6 +98,7 @@ codectl cli ls-remote           # 列出受支持工具的远端最新版本（n
 #
 # 如该文件不存在，将使用内置的内建清单作为回退。
 codectl provider sync           # 手动同步/生成 ~/.codectl/provider.json（可自定义编辑）
+codectl provider schema        # 输出 provider.json 的 JSON Schema（用于校验/补全）
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
@@ -124,6 +118,8 @@ codectl provider sync           # 手动同步/生成 ~/.codectl/provider.json�
 - 已实现命令：
     - `/doctor`：重新检测并给出状态提示
     - `/status`：在界面底部汇总一行当前状态
+    - `/add`：安装受支持的 CLI（如 `/add all`、`/add claude`）
+    - `/remove`：卸载受支持的 CLI（如 `/remove gemini`）
     - `/upgrade`（`/update`）：批量升级受支持的 CLI
     - `/task`：生成 `vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`（可用 `/task <标题>` 指定标题，自动生成 slug 与时间戳）
     - `/spec`：调用 `codex exec <说明>` 生成规范草案，保存到 `vibe-docs/spec/draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
