@@ -1032,6 +1032,11 @@ func renderVTRightPane(m *model) string {
 		return ""
 	}
 	out := m.termVT.Render()
+	// Strip OSC (Operating System Control) sequences like OSC 11 that some
+	// shells emit (e.g., setting terminal background colors). Rendering these
+	// in our TUI can leak into the real terminal and even appear as stray
+	// characters if partially interpreted. We keep CSI/SGR for styling.
+	out = stripOSC(out)
 	if !m.termFocus {
 		return out
 	}
@@ -1131,6 +1136,40 @@ func overlayCursorOnAnsiLine(line string, col int) string {
 			b.WriteString(strings.Repeat(" ", pad))
 		}
 		b.WriteString("\x1b[7m \x1b[27m")
+	}
+	return b.String()
+}
+
+// stripOSC removes OSC escape sequences from a string. OSC sequences start with
+// ESC ] and end with BEL (0x07) or ST (ESC \). This prevents terminal control
+// codes like OSC 11;rgb:... from affecting the host terminal.
+func stripOSC(s string) string {
+	b := strings.Builder{}
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b { // ESC
+			// Look ahead for OSC introducer ']'
+			if i+1 < len(s) && s[i+1] == ']' {
+				// skip until BEL or ST (ESC \)
+				j := i + 2
+				for j < len(s) {
+					if s[j] == 0x07 { // BEL
+						j++
+						break
+					}
+					if s[j] == '\\' && j > i+1 && s[j-1] == 0x1b { // ESC \
+						j++
+						break
+					}
+					j++
+				}
+				i = j
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
 	}
 	return b.String()
 }
