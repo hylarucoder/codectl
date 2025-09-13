@@ -387,16 +387,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case renderDoneMsg:
 		// apply only if still on same file and width
-		if m.selected != nil && m.selected.Path == msg.Path && m.mdVP.Width == msg.Width {
+		if m.selected != nil && m.selected.Path == msg.Path {
 			if msg.Err != "" {
 				m.mdVP.SetContent(fmt.Sprintf("读取/渲染失败：%s", msg.Err))
-			} else {
-				m.mdVP.SetContent(msg.Out)
-				// cache rendered content
-				if _, ok := m.mdCache[msg.Path]; !ok {
-					m.mdCache[msg.Path] = make(map[int]mdEntry)
-				}
-				m.mdCache[msg.Path][msg.Width] = mdEntry{out: msg.Out, modUnix: msg.ModUnix, size: msg.Size}
+				return m, nil
+			}
+			// Always show latest render result, even if width changed meanwhile.
+			// If width mismatched, schedule a re-render with current width to reflow.
+			m.mdVP.SetContent(msg.Out)
+			if _, ok := m.mdCache[msg.Path]; !ok {
+				m.mdCache[msg.Path] = make(map[int]mdEntry)
+			}
+			m.mdCache[msg.Path][msg.Width] = mdEntry{out: msg.Out, modUnix: msg.ModUnix, size: msg.Size}
+			if m.mdVP.Width != msg.Width {
+				return m, renderMarkdownCmd(msg.Path, m.mdVP.Width, m.fastMode)
 			}
 		}
 		return m, nil
