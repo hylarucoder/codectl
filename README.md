@@ -113,9 +113,7 @@ codectl provider schema        # 输出 provider.json 的 JSON Schema（用于�
 # }
 
 # Demo（Bubble Tea 示例）
-codectl demo autocomplete       # 运行自动补全示例（按 Tab 补全，Esc/Enter 退出）
 codectl demo chat               # 运行聊天消息示例（Viewport + Textarea）
-codectl demo markdown [file]    # 使用 Glamour 渲染 Markdown（可选文件路径）
 
 # 开发快捷方式（仅 main.go）
 # 直接运行常用初始化命令：
@@ -125,7 +123,7 @@ codectl demo markdown [file]    # 使用 Glamour 渲染 Markdown（可选文件�
 #   go run main.go config mcp
 #
 # 如需运行 Demo：
-#   go run main.go demo autocomplete
+#   go run main.go demo chat
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
