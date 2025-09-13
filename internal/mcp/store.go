@@ -1,34 +1,22 @@
 package mcp
 
 import (
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "sort"
+    "strings"
 
-	"codectl/internal/provider"
+    cfg "codectl/internal/config"
+    "codectl/internal/provider"
 )
 
-func configDir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil || strings.TrimSpace(base) == "" {
-		if home, herr := os.UserHomeDir(); herr == nil {
-			base = home
-		} else {
-			return "", errors.New("cannot determine config directory")
-		}
-	}
-	return filepath.Join(base, "codectl"), nil
-}
-
 func filePath() (string, error) {
-	dir, err := configDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "mcp.json"), nil
+    dir, err := cfg.Dir()
+    if err != nil {
+        return "", err
+    }
+    return filepath.Join(dir, "mcp.json"), nil
 }
 
 // Load returns configured MCP servers.

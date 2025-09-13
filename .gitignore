@@ -43,3 +43,4 @@ coverage.out
 .DS_Store
 codectl
 codectl-new
+codectl-test

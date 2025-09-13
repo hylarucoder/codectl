@@ -2,7 +2,7 @@
 
 SHELL := /bin/sh
 
-.PHONY: help start format lint
+.PHONY: help start format lint test
 
 help: ## Show this help
 	@echo "Available targets:"
@@ -28,3 +28,7 @@ lint: ## Lint (golangci-lint if available, else go vet)
 		echo "golangci-lint not found. Falling back to 'go vet'"; \
 		go vet ./...; \
 	fi
+
+test: ## Run unit tests with coverage
+	@echo "Running tests..."
+	@go test ./... -coverprofile=coverage.out -covermode=atomic

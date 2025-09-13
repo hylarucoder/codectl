@@ -1,37 +1,23 @@
 package models
 
 import (
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "sort"
+    "strings"
 
-	"codectl/internal/provider"
+    cfg "codectl/internal/config"
+    "codectl/internal/provider"
 )
-
-// configDir returns the codectl-specific config directory.
-func configDir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil || strings.TrimSpace(base) == "" {
-		// Fallback to home directory if needed
-		if home, herr := os.UserHomeDir(); herr == nil {
-			base = home
-		} else {
-			return "", errors.New("cannot determine config directory")
-		}
-	}
-	return filepath.Join(base, "codectl"), nil
-}
 
 // filePath returns the models storage file path.
 func filePath() (string, error) {
-	dir, err := configDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "models.json"), nil
+    dir, err := cfg.Dir()
+    if err != nil {
+        return "", err
+    }
+    return filepath.Join(dir, "models.json"), nil
 }
 
 // Load returns the current model list from disk. Missing file yields empty list.
