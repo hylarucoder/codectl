@@ -122,6 +122,7 @@ codectl demo markdown [file]    # 使用 Glamour 渲染 Markdown（可选文件�
 #
 #   go run main.go config model
 #   go run main.go config provider
+#   go run main.go config mcp
 #
 # 如需运行 Demo：
 #   go run main.go demo autocomplete
