@@ -3,6 +3,8 @@ package models
 import (
     "os"
     "testing"
+
+    tu "codectl/internal/testutil"
 )
 
 func withEnv(t *testing.T, key, val string) func() {
@@ -21,8 +23,8 @@ func withEnv(t *testing.T, key, val string) func() {
 func TestModels_SaveLoad_AddRemove(t *testing.T) {
     tmp := t.TempDir()
     // direct UserConfigDir to temp
-    defer withEnv(t, "XDG_CONFIG_HOME", tmp)()
-    defer withEnv(t, "HOME", tmp)() // fallback
+    defer tu.WithEnv(t, "XDG_CONFIG_HOME", tmp)()
+    defer tu.WithEnv(t, "HOME", tmp)() // fallback
 
     // initial load -> empty
     got, err := Load()

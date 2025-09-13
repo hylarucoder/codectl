@@ -5,6 +5,8 @@ import (
     "os"
     "strings"
     "testing"
+
+    tu "codectl/internal/testutil"
 )
 
 func withEnv(t *testing.T, key, val string) func() {
@@ -26,7 +28,7 @@ func withEnv(t *testing.T, key, val string) func() {
 
 func TestLoad_DefaultWhenNoFiles(t *testing.T) {
     tmp := t.TempDir()
-    defer withEnv(t, "HOME", tmp)()
+    defer tu.WithEnv(t, "HOME", tmp)()
 
     cfg, err := Load()
     if err != nil {
@@ -43,7 +45,7 @@ func TestLoad_DefaultWhenNoFiles(t *testing.T) {
 
 func TestSaveAndLoad_JSON(t *testing.T) {
     tmp := t.TempDir()
-    defer withEnv(t, "HOME", tmp)()
+    defer tu.WithEnv(t, "HOME", tmp)()
 
     in := Catalog{Models: []string{"b", "a", "a"}, MCP: []string{"x", "y", "x"}}
     if err := Save(in); err != nil {
