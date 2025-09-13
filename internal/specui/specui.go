@@ -210,7 +210,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				it := specItem{Path: fe.Path, Title: filepath.Base(fe.Path)}
 				m.selected = &it
 				m.ti.Reset()
-				m.ti.Focus()
+				m.ti.Blur()
 				m.recalcViewports()
 				m.statusMsg = "按 Esc 返回"
 				m.mdVP.SetContent("渲染中…")
@@ -227,20 +227,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// terminal focus toggle disabled (no terminal binding)
 				return m, nil
 			case "esc":
-				// back to list
-				m.page = pageSelect
+				// ensure focus stays on file manager
 				m.ti.Reset()
 				m.ti.Blur()
 				m.statusMsg = ""
-				// stop PTY if running
-				if m.pty != nil {
-					_ = m.pty.Close()
-					m.pty = nil
-				}
-				if m.termVT != nil {
-					_ = m.termVT.Close()
-					m.termVT = nil
-				}
 				return m, nil
 			case "r":
 				// reload md (async)
