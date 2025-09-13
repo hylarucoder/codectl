@@ -148,7 +148,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 if idx >= 0 && idx < len(m.items) {
                     it := m.items[idx]
                     m.selected = &it
-                    m.ensureRenderer()
+                    m.buildRenderer()
                     m.page = pageDetail
                     m.ti.Focus()
                     m.statusMsg = "已进入详情视图。按 Esc 返回"
@@ -267,27 +267,52 @@ func (m *model) recalcViewports() {
         rw = 20
     }
     // Adjust for lipgloss border padding by setting slightly smaller dimensions
-    m.mdVP.Width = lw - 4
-    m.mdVP.Height = topH - 2
-    m.logVP.Width = rw - 4
-    m.logVP.Height = topH - 2
+    mdW, mdH := lw-4, topH-2
+    lgW, lgH := rw-4, topH-2
+    if mdW < 10 {
+        mdW = lw
+    }
+    if mdH < 3 {
+        mdH = topH
+    }
+    if lgW < 10 {
+        lgW = rw
+    }
+    if lgH < 3 {
+        lgH = topH
+    }
+    if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
+        m.mdVP = viewport.New(mdW, mdH)
+    } else {
+        m.mdVP.Width = mdW
+        m.mdVP.Height = mdH
+    }
+    if m.logVP.Width == 0 && m.logVP.Height == 0 {
+        m.logVP = viewport.New(lgW, lgH)
+    } else {
+        m.logVP.Width = lgW
+        m.logVP.Height = lgH
+    }
 
     // input width adjust
     m.ti.Width = m.width - 6
 
-    // re-render markdown to wrap correctly
-    if m.renderer != nil && m.selected != nil {
+    // rebuild renderer for new width and re-render content
+    m.buildRenderer()
+    if m.selected != nil {
         m.reloadContent()
     }
 }
 
-func (m *model) ensureRenderer() {
-    if m.renderer != nil {
-        return
+func (m *model) buildRenderer() {
+    // Always rebuild with current width to ensure proper wrapping
+    width := m.mdVP.Width
+    if width <= 0 {
+        width = 80
     }
     r, _ := glamour.NewTermRenderer(
         glamour.WithAutoStyle(),
-        glamour.WithWordWrap(m.mdVP.Width),
+        glamour.WithWordWrap(width),
     )
     m.renderer = r
 }
@@ -304,9 +329,6 @@ func (m *model) reloadContent() {
     }
     content := string(b)
     // render MDX as markdown (best effort)
-    if m.renderer == nil {
-        m.ensureRenderer()
-    }
     if m.renderer != nil {
         if out, err := m.renderer.Render(content); err == nil {
             m.mdVP.SetContent(out)
@@ -403,4 +425,3 @@ func parseFrontmatterTitle(path string) string {
     }
     return ""
 }
-

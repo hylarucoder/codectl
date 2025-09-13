@@ -7,6 +7,7 @@ import (
 
     "github.com/spf13/cobra"
 
+    "codectl/internal/specui"
     "codectl/internal/tools"
     appver "codectl/internal/version"
 )
@@ -34,12 +35,17 @@ type specInfo struct {
 
 var (
     specPretty bool
+    specJSON   bool
 )
 
 var specCmd = &cobra.Command{
     Use:   "spec",
-    Short: "Print environment spec in JSON",
+    Short: "Open Spec UI (default) or dump JSON",
     RunE: func(cmd *cobra.Command, args []string) error {
+        if !specJSON {
+            // Default: open interactive UI
+            return specui.Start()
+        }
         out := specInfo{
             CodectlVersion: appver.AppVersion,
             OS:             runtime.GOOS,
@@ -77,5 +83,5 @@ var specCmd = &cobra.Command{
 
 func init() {
     specCmd.Flags().BoolVar(&specPretty, "pretty", true, "pretty-print JSON output")
+    specCmd.Flags().BoolVarP(&specJSON, "json", "j", false, "print environment spec to JSON instead of UI")
 }
-
