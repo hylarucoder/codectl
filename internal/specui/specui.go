@@ -85,6 +85,9 @@ type model struct {
 	oscPending bool
 	// markdown cache: path -> width -> entry
 	mdCache map[string]map[int]mdEntry
+	// focus management
+	focus        focusArea
+	lastTopFocus focusArea
 }
 
 type mdEntry struct {
@@ -98,6 +101,14 @@ type fileEntry struct {
 	Path  string
 	IsDir bool
 }
+
+type focusArea int
+
+const (
+	focusFiles focusArea = iota
+	focusPreview
+	focusInput
+)
 
 func initialModel() model {
 	wd, _ := os.Getwd()
@@ -140,6 +151,10 @@ func initialModel() model {
 	}
 	// file manager cwd
 	m.fmCwd = filepath.Join(root, "vibe-docs")
+	// initial focus on files
+	m.focus = focusFiles
+	m.fileTable.Focus()
+	m.ti.Blur()
 	m.reloadFileTable()
 	return m
 }
@@ -226,6 +241,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "tab":
 				// terminal focus toggle disabled (no terminal binding)
 				return m, nil
+			case "ctrl+h":
+				m.setFocus(focusFiles)
+				return m, nil
+			case "ctrl+l":
+				m.setFocus(focusPreview)
+				return m, nil
+			case "ctrl+j":
+				if m.focus == focusFiles || m.focus == focusPreview {
+					m.lastTopFocus = m.focus
+				}
+				m.setFocus(focusInput)
+				return m, nil
+			case "ctrl+k":
+				if m.lastTopFocus != focusFiles && m.lastTopFocus != focusPreview {
+					m.lastTopFocus = focusFiles
+				}
+				m.setFocus(m.lastTopFocus)
+				return m, nil
 			case "esc":
 				// ensure focus stays on file manager
 				m.ti.Reset()
@@ -280,14 +313,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmds []tea.Cmd
 			var cmd tea.Cmd
-			// file table navigation
-			m.fileTable, cmd = m.fileTable.Update(msg)
-			cmds = append(cmds, cmd)
-			// input and content scrolling
-			m.ti, cmd = m.ti.Update(msg)
-			cmds = append(cmds, cmd)
-			m.mdVP, cmd = m.mdVP.Update(msg)
-			cmds = append(cmds, cmd)
+			// route updates based on focus
+			if m.focus == focusFiles {
+				m.fileTable, cmd = m.fileTable.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+			if m.focus == focusInput {
+				m.ti, cmd = m.ti.Update(msg)
+				cmds = append(cmds, cmd)
+			}
+			if m.focus == focusPreview {
+				m.mdVP, cmd = m.mdVP.Update(msg)
+				cmds = append(cmds, cmd)
+			}
 			return m, tea.Batch(cmds...)
 		}
 	case tickMsg:
@@ -376,11 +414,16 @@ func (m model) View() string {
 		// legacy select page; unused with file manager
 		return ""
 	case pageDetail:
-		// choose styles
+		// choose styles; highlight border of focused pane
 		leftBox := boxStyle
 		rightBox := boxStyle
 		inputBox := boxStyle
-		if m.ti.Focused() {
+		switch m.focus {
+		case focusFiles:
+			leftBox = boxStyleFocus
+		case focusPreview:
+			rightBox = boxStyleFocus
+		case focusInput:
 			inputBox = boxStyleFocus
 		}
 		// top: split left (file manager) and right (markdown)
@@ -770,6 +813,21 @@ func (m *model) reloadFileTable() {
 	}
 	m.fileItems = items
 	m.fileTable.SetRows(rows)
+}
+
+// setFocus updates UI focus across panes and applies component focus state.
+func (m *model) setFocus(f focusArea) {
+	m.focus = f
+	if f == focusInput {
+		m.ti.Focus()
+	} else {
+		m.ti.Blur()
+	}
+	if f == focusFiles {
+		m.fileTable.Focus()
+	} else {
+		m.fileTable.Blur()
+	}
 }
 
 // parseFrontmatterTitle extracts `title:` from the first frontmatter block
