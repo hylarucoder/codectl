@@ -203,9 +203,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.recalcViewports()
 					// async render
 					m.mdVP.SetContent("渲染中…")
-					// return a command to kick off rendering
-					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 					m.statusMsg = "已进入详情视图。按 Esc 返回"
+					// default enable terminal mode and start PTY
+					m.termMode = true
+					cols, rows := m.termSize()
+					// return a batch of commands: render markdown and start PTY
+					return m, tea.Batch(
+						renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode),
+						startPTYCmd(m.cwd, cols, rows),
+					)
 				}
 				return m, nil
 			}
