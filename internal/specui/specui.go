@@ -219,9 +219,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.recalcViewports()
 					// async render (use cache when possible)
 					m.statusMsg = "已进入详情视图。按 Esc 返回"
-					// default enable terminal mode and start PTY
-					m.termMode = true
-					cols, rows := m.termSize()
+					// Do NOT auto-start terminal; enable only when user presses 't'
 					// check cache before rendering
 					var cmds []tea.Cmd
 					if m.selected != nil {
@@ -245,7 +243,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
 						}
 					}
-					cmds = append(cmds, startPTYCmd(m.cwd, cols, rows))
 					return m, tea.Batch(cmds...)
 				}
 				return m, nil
