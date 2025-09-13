@@ -3,7 +3,6 @@ package specui
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,9 +55,14 @@ type model struct {
 	height int
 
 	// flow
-	page      page
-	items     []specItem
-	table     table.Model
+	page page
+	// legacy spec list (unused when using file manager)
+	items []specItem
+	table table.Model
+	// file manager state
+	fmCwd     string
+	fileItems []fileEntry
+	fileTable table.Model
 	selected  *specItem
 	mdVP      viewport.Model
 	logVP     viewport.Model
@@ -89,23 +93,24 @@ type mdEntry struct {
 	size    int64
 }
 
+type fileEntry struct {
+	Name  string
+	Path  string
+	IsDir bool
+}
+
 func initialModel() model {
 	wd, _ := os.Getwd()
 	root := wd
 	if r, err := system.GitRoot(context.Background(), wd); err == nil && strings.TrimSpace(r) != "" {
 		root = r
 	}
-	// build table
-	columns := []table.Column{
-		{Title: "File", Width: 36},
-		{Title: "Title", Width: 40},
-	}
-	t := table.New(
-		table.WithColumns(columns),
+	// build file table (left file manager)
+	ft := table.New(
+		table.WithColumns([]table.Column{{Title: "Files", Width: 32}}),
 		table.WithFocused(true),
-		table.WithHeight(12),
+		table.WithHeight(20),
 	)
-	// style similar to bubbletea example
 	ts := table.DefaultStyles()
 	ts.Header = ts.Header.
 		BorderStyle(lipgloss.NormalBorder()).
@@ -116,7 +121,7 @@ func initialModel() model {
 		Foreground(lipgloss.Color("230")).
 		Background(lipgloss.Color("57")).
 		Bold(false)
-	t.SetStyles(ts)
+	ft.SetStyles(ts)
 
 	// input for conversation
 	ti := textinput.New()
@@ -125,17 +130,17 @@ func initialModel() model {
 	ti.CharLimit = 4096
 
 	m := model{
-		cwd:     wd,
-		root:    root,
-		page:    pageSelect,
-		table:   t,
-		ti:      ti,
-		logs:    make([]string, 0, 64),
-		mdCache: make(map[string]map[int]mdEntry),
+		cwd:       wd,
+		root:      root,
+		page:      pageDetail,
+		fileTable: ft,
+		ti:        ti,
+		logs:      make([]string, 0, 64),
+		mdCache:   make(map[string]map[int]mdEntry),
 	}
-	// preload items
-	m.items = m.loadSpecItems()
-	m.refreshTableRows()
+	// file manager cwd
+	m.fmCwd = filepath.Join(root, "vibe-docs")
+	m.reloadFileTable()
 	return m
 }
 
@@ -147,28 +152,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		// update table height (leave some room for header/help)
-		if m.page == pageSelect {
-			h := m.height - 6
-			if h < 6 {
-				h = 6
-			}
-			m.table.SetHeight(h)
-		} else {
-			m.recalcViewports()
-			// async re-render for new width
-			if m.selected != nil {
-				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
-			}
-			// resize PTY and VT emulator if terminal mode is on
-			if m.termMode && m.pty != nil {
-				cols, rows := m.termSize()
-				_ = m.pty.Resize(cols, rows)
-				if m.termVT != nil {
-					m.termVT.Resize(cols, rows)
-					// refresh render after resize
-					m.termDirty = true
-				}
-			}
+		m.recalcViewports()
+		// adjust file table height
+		if m.fileTable.Height() != m.mdVP.Height {
+			m.fileTable.SetHeight(m.mdVP.Height)
+		}
+		// async re-render for new width
+		if m.selected != nil {
+			return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -197,62 +188,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		switch m.page {
-		case pageSelect:
-			switch msg.String() {
-			case "enter":
-				if len(m.items) == 0 {
-					return m, nil
-				}
-				row := m.table.SelectedRow()
-				if row == nil {
-					return m, nil
-				}
-				idx := m.table.Cursor()
-				if idx >= 0 && idx < len(m.items) {
-					it := m.items[idx]
-					m.selected = &it
-					m.page = pageDetail
-					// reset and focus input to avoid carrying over stale chars
-					m.ti.Reset()
-					m.ti.Focus()
-					m.termFocus = false
-					// layout first so content isn't lost when creating viewports
-					m.recalcViewports()
-					// async render (use cache when possible)
-					m.statusMsg = "已进入详情视图。按 Esc 返回"
-					// Do NOT auto-start terminal; enable only when user presses 't'
-					// check cache before rendering
-					var cmds []tea.Cmd
-					if m.selected != nil {
-						p := m.selected.Path
-						w := m.mdVP.Width
-						if cW, ok := m.mdCache[p]; ok {
-							if ce, ok2 := cW[w]; ok2 {
-								// verify file unchanged
-								if fi, err := os.Stat(p); err == nil && fi.ModTime().Unix() == ce.modUnix && fi.Size() == ce.size {
-									m.mdVP.SetContent(ce.out)
-								} else {
-									m.mdVP.SetContent("渲染中…")
-									cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
-								}
-							} else {
-								m.mdVP.SetContent("渲染中…")
-								cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
-							}
-						} else {
-							m.mdVP.SetContent("渲染中…")
-							cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
-						}
-					}
-					return m, tea.Batch(cmds...)
-				}
-				return m, nil
-			}
-			var cmd tea.Cmd
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		case pageDetail:
 			switch msg.String() {
+			case "enter":
+				// open selection: dir -> cd; file -> render
+				if len(m.fileItems) == 0 {
+					return m, nil
+				}
+				idx := m.fileTable.Cursor()
+				if idx < 0 || idx >= len(m.fileItems) {
+					return m, nil
+				}
+				fe := m.fileItems[idx]
+				if fe.IsDir {
+					// change directory (prevent leaving vibe-docs root)
+					m.fmCwd = fe.Path
+					m.reloadFileTable()
+					return m, nil
+				}
+				// render file
+				it := specItem{Path: fe.Path, Title: filepath.Base(fe.Path)}
+				m.selected = &it
+				m.ti.Reset()
+				m.ti.Focus()
+				m.recalcViewports()
+				m.statusMsg = "按 Esc 返回"
+				m.mdVP.SetContent("渲染中…")
+				return m, renderMarkdownCmd(fe.Path, m.mdVP.Width, m.fastMode)
+			case "left", "backspace":
+				// go up if possible
+				root := filepath.Join(m.root, "vibe-docs")
+				if strings.TrimRight(m.fmCwd, string(filepath.Separator)) != strings.TrimRight(root, string(filepath.Separator)) {
+					m.fmCwd = filepath.Dir(m.fmCwd)
+					m.reloadFileTable()
+				}
+				return m, nil
 			case "tab":
 				// terminal focus toggle disabled (no terminal binding)
 				return m, nil
@@ -320,12 +290,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmds []tea.Cmd
 			var cmd tea.Cmd
+			// file table navigation
+			m.fileTable, cmd = m.fileTable.Update(msg)
+			cmds = append(cmds, cmd)
+			// input and content scrolling
 			m.ti, cmd = m.ti.Update(msg)
 			cmds = append(cmds, cmd)
-			// allow scrolling in viewports
 			m.mdVP, cmd = m.mdVP.Update(msg)
-			cmds = append(cmds, cmd)
-			m.logVP, cmd = m.logVP.Update(msg)
 			cmds = append(cmds, cmd)
 			return m, tea.Batch(cmds...)
 		}
@@ -412,29 +383,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	switch m.page {
 	case pageSelect:
-		title := lipgloss.NewStyle().Bold(true).Render("选择一个规范文件 (Enter 确认，Ctrl+C 退出)")
-		help := "来源：vibe-docs/spec/*.spec.mdx"
-		return strings.Join([]string{
-			title,
-			"",
-			m.table.View(),
-			"",
-			help,
-			"",
-			m.renderWorkbar(),
-		}, "\n")
+		// legacy select page; unused with file manager
+		return ""
 	case pageDetail:
-		// choose styles based on focus
+		// choose styles
+		leftBox := boxStyle
 		rightBox := boxStyle
 		inputBox := boxStyle
-		if m.termMode && m.termFocus {
-			rightBox = boxStyleFocus
-		} else if m.ti.Focused() {
+		if m.ti.Focused() {
 			inputBox = boxStyleFocus
 		}
-		// top: split left (md) and right (log/terminal)
-		left := boxStyle.Render(m.mdVP.View())
-		right := rightBox.Render(m.logVP.View())
+		// top: split left (file manager) and right (markdown)
+		left := leftBox.Render(m.fileTable.View())
+		right := rightBox.Render(m.mdVP.View())
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
 		bottom := inputBox.Render(m.ti.View()) + "\n" + m.renderWorkbar()
@@ -470,12 +431,15 @@ func (m *model) recalcViewports() {
 		topH = 3
 	}
 
-	// top split left/right 50/50
+	// top split: left (file list) 32 cols, right (markdown) rest
 	innerW := m.width - 2 // borders padding approx
 	if innerW < 20 {
 		innerW = m.width
 	}
-	lw := innerW / 2
+	lw := 32
+	if lw > innerW-10 {
+		lw = innerW / 3
+	}
 	rw := innerW - lw
 	if lw < 20 {
 		lw = 20
@@ -484,8 +448,9 @@ func (m *model) recalcViewports() {
 		rw = 20
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
-	mdW, mdH := lw-4, topH-2
-	lgW, lgH := rw-4, topH-2
+	// left (file list) uses table height directly; right is markdown viewport
+	mdW, mdH := rw-4, topH-2
+	lgW, lgH := 0, 0
 	if mdW < 10 {
 		mdW = lw
 	}
@@ -504,12 +469,7 @@ func (m *model) recalcViewports() {
 		m.mdVP.Width = mdW
 		m.mdVP.Height = mdH
 	}
-	if m.logVP.Width == 0 && m.logVP.Height == 0 {
-		m.logVP = viewport.New(lgW, lgH)
-	} else {
-		m.logVP.Width = lgW
-		m.logVP.Height = lgH
-	}
+	// log viewport unused in this layout
 
 	// input width adjust
 	m.ti.Width = m.width - 6
@@ -766,39 +726,11 @@ func stripFrontmatter(s string) string {
 }
 
 func (m *model) refreshTableRows() {
-	rows := make([]table.Row, 0, len(m.items))
-	for _, it := range m.items {
-		rows = append(rows, table.Row{relFrom(m.root, it.Path), it.Title})
-	}
-	m.table.SetRows(rows)
+	// legacy: unused
 }
 
 func (m model) loadSpecItems() []specItem {
-	// scan vibe-docs/spec under repo root
-	dir := filepath.Join(m.root, "vibe-docs", "spec")
-	st, err := os.Stat(dir)
-	if err != nil || !st.IsDir() {
-		return nil
-	}
-	res := make([]specItem, 0, 8)
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		name := strings.ToLower(d.Name())
-		if !strings.HasSuffix(name, ".spec.mdx") {
-			return nil
-		}
-		// parse title from frontmatter
-		title := parseFrontmatterTitle(path)
-		if strings.TrimSpace(title) == "" {
-			title = filepath.Base(path)
-		}
-		res = append(res, specItem{Path: path, Title: title})
-		return nil
-	})
-	sort.Slice(res, func(i, j int) bool { return res[i].Path < res[j].Path })
-	return res
+	return nil
 }
 
 func relFrom(root, p string) string {
@@ -806,6 +738,48 @@ func relFrom(root, p string) string {
 		return r
 	}
 	return p
+}
+
+// reloadFileTable populates the file manager table for fmCwd.
+func (m *model) reloadFileTable() {
+	dir := m.fmCwd
+	st, err := os.Stat(dir)
+	if err != nil || !st.IsDir() {
+		m.fileItems = nil
+		m.fileTable.SetRows(nil)
+		return
+	}
+	entries, _ := os.ReadDir(dir)
+	// sort: dirs first, then files, by name
+	sort.SliceStable(entries, func(i, j int) bool {
+		di, dj := entries[i].IsDir(), entries[j].IsDir()
+		if di != dj {
+			return di && !dj
+		}
+		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
+	})
+	items := make([]fileEntry, 0, len(entries)+1)
+	rows := make([]table.Row, 0, len(entries)+1)
+	// up entry
+	root := filepath.Join(m.root, "vibe-docs")
+	if strings.TrimRight(dir, string(filepath.Separator)) != strings.TrimRight(root, string(filepath.Separator)) {
+		up := filepath.Dir(dir)
+		items = append(items, fileEntry{Name: "..", Path: up, IsDir: true})
+		rows = append(rows, table.Row{".."})
+	}
+	for _, e := range entries {
+		name := e.Name()
+		p := filepath.Join(dir, name)
+		isDir := e.IsDir()
+		disp := name
+		if isDir {
+			disp = name + "/"
+		}
+		items = append(items, fileEntry{Name: name, Path: p, IsDir: isDir})
+		rows = append(rows, table.Row{disp})
+	}
+	m.fileItems = items
+	m.fileTable.SetRows(rows)
 }
 
 // parseFrontmatterTitle extracts `title:` from the first frontmatter block
