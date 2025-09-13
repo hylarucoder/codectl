@@ -275,17 +275,14 @@ func (m *model) recalcViewports() {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
-	// Split: top (60%) and bottom (40%)
-	topH := int(float64(m.height) * 0.6)
-	if topH < 6 {
-		topH = m.height - 5
+	// Reserve bottom for input (3 lines box) + status bar (1 line) = 4 lines
+	bottomH := 4
+	if bottomH >= m.height {
+		bottomH = 1
 	}
+	topH := m.height - bottomH
 	if topH < 3 {
 		topH = 3
-	}
-	bottomH := m.height - topH
-	if bottomH < 3 {
-		bottomH = 3
 	}
 
 	// top split left/right 50/50
