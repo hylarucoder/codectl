@@ -168,9 +168,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		// update table height (leave some room for header/help)
 		m.recalcViewports()
-		// adjust file table height
-		if m.fileTable.Height() != m.mdVP.Height {
-			m.fileTable.SetHeight(m.mdVP.Height)
+		// adjust file table height to match right box (header+divider+viewport)
+		if m.fileTable.Height() != m.mdVP.Height+2 {
+			m.fileTable.SetHeight(m.mdVP.Height + 2)
 		}
 		// async re-render for new width
 		if m.selected != nil {
@@ -435,8 +435,23 @@ func (m model) View() string {
 		} else {
 			fname = "(未选择文件)"
 		}
+		// divider under filename sized to preview width; clip long names
+		sepWidth := m.mdVP.Width
+		if sepWidth <= 0 {
+			sepWidth = 80
+		}
+		clipW := sepWidth - 2
+		if clipW < 1 {
+			clipW = sepWidth
+		}
+		nameClipped := fname
+		if xansi.StringWidth(nameClipped) > clipW {
+			nameClipped = xansi.Truncate(nameClipped, clipW, "…")
+		}
+		divider := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", sepWidth))
 		rightInner := lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle.Render(" "+fname+" "),
+			headerStyle.Render(" "+nameClipped+" "),
+			divider,
 			m.mdVP.View(),
 		)
 		right := rightBox.Render(rightInner)
@@ -494,10 +509,12 @@ func (m *model) recalcViewports() {
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
 	// left (file list) uses table height directly; right is markdown viewport
-	// right also reserves 1 line for filename header inside the box
+	// right also reserves 2 lines for filename header and divider inside the box
 	mdW, mdH := rw-4, topH-2
-	if mdH > 1 {
-		mdH--
+	if mdH > 2 {
+		mdH -= 2
+	} else if mdH > 0 {
+		mdH = 1
 	}
 	lgW, lgH := 0, 0
 	if mdW < 10 {
