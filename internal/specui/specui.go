@@ -546,9 +546,16 @@ func (m *model) buildRenderer() {
 	if width <= 0 {
 		width = 80
 	}
+	// Adopt demo markdown rendering: account for Glamour's internal gutter
+	// to avoid jagged wrapping.
+	const glamourGutter = 2
+	wrap := width - glamourGutter
+	if wrap < 10 {
+		wrap = 10
+	}
 	r, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
+		glamour.WithWordWrap(wrap),
 	)
 	m.renderer = r
 }
@@ -583,9 +590,15 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 		if fast {
 			return renderDoneMsg{Path: path, Width: width, Out: stripFrontmatter(content), ModUnix: modUnix, Size: size}
 		}
+		// Match demo rendering: subtract Glamour gutter from wrap width
+		const glamourGutter = 2
+		wrap := width - glamourGutter
+		if wrap < 10 {
+			wrap = 10
+		}
 		r, _ := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(width),
+			glamour.WithWordWrap(wrap),
 		)
 		if out, err := r.Render(content); err == nil {
 			return renderDoneMsg{Path: path, Width: width, Out: out, ModUnix: modUnix, Size: size}
