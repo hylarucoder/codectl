@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -18,6 +19,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
+	"syscall"
 
 	"codectl/internal/system"
 )
@@ -63,6 +65,9 @@ type model struct {
 	now       time.Time
 	// rendering options
 	fastMode bool
+	// terminal mode state
+	termMode   bool
+	cmdRunning bool
 }
 
 func initialModel() model {
@@ -194,10 +199,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 				}
 				return m, nil
+			case "t":
+				// toggle terminal mode (right pane behavior)
+				m.termMode = !m.termMode
+				return m, nil
 			}
 			// input handling
 			if msg.Type == tea.KeyEnter && m.ti.Focused() {
 				val := strings.TrimSpace(m.ti.Value())
+				if m.termMode {
+					if val == "" || m.cmdRunning {
+						return m, nil
+					}
+					// append prompt line
+					m.logs = append(m.logs, ">$ "+val)
+					m.logVP.SetContent(strings.Join(m.logs, "\n"))
+					m.logVP.GotoBottom()
+					m.ti.SetValue("")
+					m.cmdRunning = true
+					return m, runShellCmd(m.root, val, 120*time.Second)
+				}
+				// chat mode: append to log
 				if val != "" {
 					stamp := time.Now().Format("15:04:05")
 					m.logs = append(m.logs, fmt.Sprintf("[%s] %s", stamp, val))
@@ -222,6 +244,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tickCmd()
+	case termDoneMsg:
+		m.cmdRunning = false
+		// append output and exit code
+		if strings.TrimSpace(msg.Out) != "" {
+			// split into lines to merge with logs
+			outs := strings.Split(strings.ReplaceAll(msg.Out, "\r\n", "\n"), "\n")
+			for _, ln := range outs {
+				if ln == "" {
+					continue
+				}
+				m.logs = append(m.logs, ln)
+			}
+		}
+		if msg.Exit != 0 {
+			m.logs = append(m.logs, fmt.Sprintf("[exit %d]", msg.Exit))
+		}
+		m.logVP.SetContent(strings.Join(m.logs, "\n"))
+		m.logVP.GotoBottom()
+		return m, nil
 	case renderDoneMsg:
 		// apply only if still on same file and width
 		if m.selected != nil && m.selected.Path == msg.Path && m.mdVP.Width == msg.Width {
@@ -377,6 +418,50 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 	}
 }
 
+// terminal command result
+type termDoneMsg struct {
+	Out  string
+	Exit int
+}
+
+func runShellCmd(cwd string, line string, timeout time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		sh := os.Getenv("SHELL")
+		var cmd *exec.Cmd
+		if sh != "" {
+			cmd = exec.Command(sh, "-lc", line)
+		} else {
+			// fallback
+			if _, err := exec.LookPath("bash"); err == nil {
+				cmd = exec.Command("bash", "-lc", line)
+			} else {
+				cmd = exec.Command("sh", "-lc", line)
+			}
+		}
+		cmd.Dir = cwd
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
+		cmd.Dir = cwd
+		out, err := cmd.CombinedOutput()
+		exit := 0
+		if err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				if ws, ok2 := ee.Sys().(syscall.WaitStatus); ok2 {
+					exit = ws.ExitStatus()
+				} else {
+					exit = 1
+				}
+			} else if ctx.Err() == context.DeadlineExceeded {
+				exit = 124
+			} else {
+				exit = 1
+			}
+		}
+		return termDoneMsg{Out: string(out), Exit: exit}
+	}
+}
+
 // stripFrontmatter removes the first frontmatter block if present
 func stripFrontmatter(s string) string {
 	lines := strings.Split(s, "\n")
@@ -506,9 +591,14 @@ func (m model) renderWorkbar() string {
 		} else {
 			left = append(left, "No file selected")
 		}
-		left = append(left, "↵ 记录")
+		if m.termMode {
+			left = append(left, "↵ 执行")
+		} else {
+			left = append(left, "↵ 记录")
+		}
 		left = append(left, "r 载入")
 		left = append(left, "f 快速")
+		left = append(left, "t 终端")
 		left = append(left, "Esc 返回")
 	}
 	// right segments
@@ -518,6 +608,11 @@ func (m model) renderWorkbar() string {
 			right = append(right, "快速:开")
 		} else {
 			right = append(right, "快速:关")
+		}
+		if m.termMode {
+			right = append(right, "终端:开")
+		} else {
+			right = append(right, "终端:关")
 		}
 	}
 	if !m.now.IsZero() {
