@@ -511,6 +511,7 @@ func (m model) renderWorkbar() string {
 		}
 		left = append(left, "↵ 记录")
 		left = append(left, "r 载入")
+		left = append(left, "f 快速")
 		left = append(left, "Esc 返回")
 	}
 	// right segments
