@@ -128,10 +128,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.table.SetHeight(h)
 		} else {
 			m.recalcViewports()
-			// rebuild renderer for new width and re-render only when in detail view
+			// async re-render for new width
 			if m.selected != nil {
-				m.buildRenderer()
-				m.reloadContent()
+				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
 			}
 		}
 		return m, nil
@@ -159,8 +158,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ti.Focus()
 					// layout first so content isn't lost when creating viewports
 					m.recalcViewports()
-					m.buildRenderer()
-					m.reloadContent()
+					// async render
+					m.mdVP.SetContent("渲染中…")
+					// return a command to kick off rendering
+					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
 					m.statusMsg = "已进入详情视图。按 Esc 返回"
 				}
 				return m, nil
@@ -177,8 +178,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = ""
 				return m, nil
 			case "r":
-				// reload md
-				m.reloadContent()
+				// reload md (async)
+				if m.selected != nil {
+					m.mdVP.SetContent("渲染中…")
+					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
+				}
 				return m, nil
 			}
 			// input handling
@@ -208,6 +212,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tickCmd()
+	case renderDoneMsg:
+		// apply only if still on same file and width
+		if m.selected != nil && m.selected.Path == msg.Path && m.mdVP.Width == msg.Width {
+			if msg.Err != "" {
+				m.mdVP.SetContent(fmt.Sprintf("读取/渲染失败：%s", msg.Err))
+			} else {
+				m.mdVP.SetContent(msg.Out)
+			}
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -324,26 +338,29 @@ func (m *model) buildRenderer() {
 	m.renderer = r
 }
 
-func (m *model) reloadContent() {
-	if m.selected == nil {
-		return
-	}
-	b, err := os.ReadFile(m.selected.Path)
-	if err != nil {
-		m.errMsg = err.Error()
-		m.mdVP.SetContent(fmt.Sprintf("读取失败：%v", err))
-		return
-	}
-	content := string(b)
-	// render MDX as markdown (best effort)
-	if m.renderer != nil {
-		if out, err := m.renderer.Render(content); err == nil {
-			m.mdVP.SetContent(out)
-		} else {
-			m.mdVP.SetContent(content)
+// Background render command and message
+type renderDoneMsg struct {
+	Path  string
+	Width int
+	Out   string
+	Err   string
+}
+
+func renderMarkdownCmd(path string, width int) tea.Cmd {
+	return func() tea.Msg {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return renderDoneMsg{Path: path, Width: width, Err: err.Error()}
 		}
-	} else {
-		m.mdVP.SetContent(content)
+		content := string(b)
+		r, _ := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(width),
+		)
+		if out, err := r.Render(content); err == nil {
+			return renderDoneMsg{Path: path, Width: width, Out: out}
+		}
+		return renderDoneMsg{Path: path, Width: width, Out: content}
 	}
 }
 
