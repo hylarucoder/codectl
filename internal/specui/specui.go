@@ -209,7 +209,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					it := m.items[idx]
 					m.selected = &it
 					m.page = pageDetail
-					// default focus to input (line-mode typing)
+					// reset and focus input to avoid carrying over stale chars
+					m.ti.Reset()
 					m.ti.Focus()
 					m.termFocus = false
 					// layout first so content isn't lost when creating viewports
@@ -267,6 +268,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				// back to list
 				m.page = pageSelect
+				m.ti.Reset()
 				m.ti.Blur()
 				m.statusMsg = ""
 				// stop PTY if running
