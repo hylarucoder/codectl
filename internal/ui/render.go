@@ -1,76 +1,76 @@
 package ui
 
 import (
-    "fmt"
-    "strings"
+	"fmt"
+	"strings"
 
-    "github.com/charmbracelet/lipgloss"
-    xansi "github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 // Tabs
 type tabKind int
 
 const (
-    tabInstall tabKind = iota
-    tabUpdate
-    tabSync
-    tabClean
+	tabInstall tabKind = iota
+	tabUpdate
+	tabSync
+	tabClean
 )
 
 func (t tabKind) String() string {
-    switch t {
-    case tabInstall:
-        return "install"
-    case tabUpdate:
-        return "update"
-    case tabSync:
-        return "sync"
-    case tabClean:
-        return "clean"
-    default:
-        return "?"
-    }
+	switch t {
+	case tabInstall:
+		return "install"
+	case tabUpdate:
+		return "update"
+	case tabSync:
+		return "sync"
+	case tabClean:
+		return "clean"
+	default:
+		return "?"
+	}
 }
 
 func renderTabs(width int, active tabKind) string {
-    w := width
-    if w <= 0 {
-        w = 100
-    }
-    inner := w
+	w := width
+	if w <= 0 {
+		w = 100
+	}
+	inner := w
 
-    base := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236")).Padding(0, 1)
-    hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("86")).Padding(0, 1)
+	base := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236")).Padding(0, 1)
+	hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("86")).Padding(0, 1)
 
-    items := []struct {
-        k   tabKind
-        txt string
-    }{
-        {tabInstall, "install"},
-        {tabUpdate, "update"},
-        {tabSync, "sync"},
-        {tabClean, "clean"},
-    }
+	items := []struct {
+		k   tabKind
+		txt string
+	}{
+		{tabInstall, "install"},
+		{tabUpdate, "update"},
+		{tabSync, "sync"},
+		{tabClean, "clean"},
+	}
 
-    parts := make([]string, 0, len(items))
-    for _, it := range items {
-        if it.k == active {
-            parts = append(parts, hl.Render(it.txt))
-        } else {
-            parts = append(parts, base.Render(it.txt))
-        }
-    }
-    line := strings.Join(parts, " ")
-    // Trim if necessary
-    if xansi.StringWidth(line) > inner {
-        // Naively drop from the right until it fits
-        for len(parts) > 0 && xansi.StringWidth(strings.Join(parts, " ")) > inner {
-            parts = parts[:len(parts)-1]
-        }
-        line = strings.Join(parts, " ")
-    }
-    return line + "\n"
+	parts := make([]string, 0, len(items))
+	for _, it := range items {
+		if it.k == active {
+			parts = append(parts, hl.Render(it.txt))
+		} else {
+			parts = append(parts, base.Render(it.txt))
+		}
+	}
+	line := strings.Join(parts, " ")
+	// Trim if necessary
+	if xansi.StringWidth(line) > inner {
+		// Naively drop from the right until it fits
+		for len(parts) > 0 && xansi.StringWidth(strings.Join(parts, " ")) > inner {
+			parts = parts[:len(parts)-1]
+		}
+		line = strings.Join(parts, " ")
+	}
+	return line + "\n"
 }
 
 // renderBanner creates a welcome banner and can include additional lines inside the box.
@@ -184,72 +184,96 @@ func renderStatusBar(width int, left, right string) string {
 // its own background color. Left segments are left-aligned, right segments
 // right-aligned. Spacing is ANSI-safe.
 func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
+	// Lip Gloss layout example-inspired status bar:
+	// - Subtle bar background spans full width
+	// - First left item is a highlighted “key” chip
+	// - Remaining items (left and right) are colored nuggets
+	// - Center area flex-fills with bar background
+
 	w := width
 	if w <= 0 {
 		w = 100
 	}
 
-	// Define palettes for segments
-	// Left palette (e.g., time)
-	leftBG := []string{"24", "30", "60", "66"}
-	// Right palette (e.g., git segments)
-	rightBG := []string{"22", "23", "28", "29", "57", "60"}
+	// Base bar colors (adaptive like the example)
+	barFG := lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}
+	barBG := lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}
 
-	seg := func(text, bg string) string {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color(bg))
-		return style.Render(" " + text + " ")
+	statusBarStyle := lipgloss.NewStyle().
+		Foreground(barFG).
+		Background(barBG)
+
+	// Key chip (left-most) and generic nugget chips
+	keyStyle := lipgloss.NewStyle().
+		Inherit(statusBarStyle).
+		Foreground(lipgloss.Color("#FFFDF5")).
+		Background(lipgloss.Color("#FF5F87")).
+		Padding(0, 1).
+		MarginRight(1)
+
+	nugget := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFFDF5")).
+		Padding(0, 1)
+
+	// Palette for nuggets (alternating)
+	nuggetBG := []lipgloss.Color{
+		lipgloss.Color("#A550DF"), // purple
+		lipgloss.Color("#6124DF"), // darker purple
+		lipgloss.Color("#43BF6D"), // green
 	}
 
-	// Render segments with alternating palettes
-	lrender := make([]string, 0, len(leftParts))
+	// Center fill inherits bar style and expands to fill remaining width
+	centerStyle := lipgloss.NewStyle().Inherit(statusBarStyle)
+
+	// Render left chips
+	leftItems := make([]string, 0, len(leftParts))
 	for i, s := range leftParts {
-		bg := leftBG[i%len(leftBG)]
-		lrender = append(lrender, seg(s, bg))
-	}
-	rrender := make([]string, 0, len(rightParts))
-	for i, s := range rightParts {
-		bg := rightBG[i%len(rightBG)]
-		rrender = append(rrender, seg(s, bg))
-	}
-	lstr := strings.Join(lrender, " ")
-	rstr := strings.Join(rrender, " ")
-
-	// Shrink from left if overflow
-	lw := xansi.StringWidth(lstr)
-	rw := xansi.StringWidth(rstr)
-	inner := w
-	// ensure at least one space between sides when both present
-	minGap := 1
-	if lstr == "" || rstr == "" {
-		minGap = 0
-	}
-	for lw+rw+minGap > inner && len(lrender) > 0 {
-		lrender = lrender[:len(lrender)-1]
-		lstr = strings.Join(lrender, " ")
-		lw = xansi.StringWidth(lstr)
-	}
-	// If still overflow, trim right-most segment text (naive cut)
-	if lw+rw+minGap > inner && len(rrender) > 0 {
-		// convert last right segment to plain text approximation
-		// We can't easily strip ANSI here, so instead try reducing spacing by using no joins
-		// As a fallback, drop entire right segments until it fits
-		for lw+rw+minGap > inner && len(rrender) > 0 {
-			rrender = rrender[:len(rrender)-1]
-			rstr = strings.Join(rrender, " ")
-			rw = xansi.StringWidth(rstr)
+		if i == 0 {
+			leftItems = append(leftItems, keyStyle.Render(s))
+			continue
 		}
+		bg := nuggetBG[(i-1)%len(nuggetBG)]
+		leftItems = append(leftItems, nugget.Background(bg).Render(s))
 	}
-	// Compose
-	lw = xansi.StringWidth(lstr)
-	rw = xansi.StringWidth(rstr)
-	pad := inner - lw - rw
-	if pad < 0 {
-		pad = 0
+	leftStr := strings.Join(leftItems, "")
+
+	// Render right chips
+	rightItems := make([]string, 0, len(rightParts))
+	for i, s := range rightParts {
+		bg := nuggetBG[i%len(nuggetBG)]
+		rightItems = append(rightItems, nugget.Background(bg).Render(s))
 	}
-	gap := pad
-	if lstr != "" && rstr != "" && gap > 0 {
-		// keep at least one space between sides when both present
-		// If gap is zero, they will butt together; acceptable when width is tiny
+	rightStr := strings.Join(rightItems, "")
+
+	// If overflow, trim from the left tail, then from right, preserving the first left key when possible
+	lw := xansi.StringWidth(leftStr)
+	rw := xansi.StringWidth(rightStr)
+	inner := w
+
+	// Helper to rebuild strings from items
+	rebuild := func(parts []string) (string, int) {
+		s := strings.Join(parts, "")
+		return s, xansi.StringWidth(s)
 	}
-	return lstr + strings.Repeat(" ", gap) + rstr
+
+	// Protect the first left chip if present
+	for lw+rw > inner && len(leftItems) > 1 {
+		leftItems = leftItems[:len(leftItems)-1]
+		leftStr, lw = rebuild(leftItems)
+	}
+	for lw+rw > inner && len(rightItems) > 0 {
+		rightItems = rightItems[:len(rightItems)-1]
+		rightStr, rw = rebuild(rightItems)
+	}
+
+	// Compute center width (can be zero)
+	centerWidth := inner - lw - rw
+	if centerWidth < 0 {
+		centerWidth = 0
+	}
+	center := centerStyle.Width(centerWidth).Render("")
+
+	bar := leftStr + center + rightStr
+	// Ensure base background across the whole bar
+	return statusBarStyle.Width(w).Render(bar)
 }

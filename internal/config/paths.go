@@ -1,10 +1,10 @@
 package config
 
 import (
-    "errors"
-    "os"
-    "path/filepath"
-    "strings"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Dir returns the codectl config directory under the user config base.
@@ -12,14 +12,24 @@ import (
 // to ~/Library/Application Support/codectl; and on Windows to %AppData%/codectl.
 // Falls back to HOME when UserConfigDir is unavailable.
 func Dir() (string, error) {
-    base, err := os.UserConfigDir()
-    if err != nil || strings.TrimSpace(base) == "" {
-        if home, herr := os.UserHomeDir(); herr == nil {
-            base = home
-        } else {
-            return "", errors.New("cannot determine config directory")
-        }
-    }
-    return filepath.Join(base, "codectl"), nil
+	base, err := os.UserConfigDir()
+	if err != nil || strings.TrimSpace(base) == "" {
+		if home, herr := os.UserHomeDir(); herr == nil {
+			base = home
+		} else {
+			return "", errors.New("cannot determine config directory")
+		}
+	}
+	return filepath.Join(base, "codectl"), nil
 }
 
+// DotDir returns the legacy/simple config directory at ~/.codectl.
+// This is used for user-visible JSON lists (models.json, mcp.json, provider.json)
+// to keep paths predictable across platforms.
+func DotDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "", errors.New("cannot determine home directory")
+	}
+	return filepath.Join(home, ".codectl"), nil
+}

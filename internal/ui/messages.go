@@ -31,3 +31,6 @@ type tickMsg time.Time
 
 // git info updates
 type gitInfoMsg struct{ info system.GitInfo }
+
+// external exec finished messages (e.g., /codex)
+type codexFinishedMsg struct{ err error }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,8 +20,12 @@ type model struct {
 	updatedAt time.Time
 	quitting  bool
 	// upgrade state
-	upgrading    bool
-	upgradeNotes map[tools.ToolID]string
+	upgrading bool
+	// Sequential upgrade flow
+	upList       []tools.ToolInfo
+	upIndex      int
+	upSpinner    spinner.Model
+	upProgress   progress.Model
 	upgradeDone  int
 	upgradeTotal int
 	cwd          string
@@ -34,18 +40,18 @@ type model struct {
 	git          system.GitInfo
 	lastGitCheck time.Time
 
-    // slash commands UI state
-    slashVisible  bool
-    slashFiltered []SlashCmd
-    slashIndex    int
-    notice        string
+	// slash commands UI state
+	slashVisible  bool
+	slashFiltered []SlashCmd
+	slashIndex    int
+	notice        string
 
-    // transient status-bar hint
-    hintText  string
-    hintUntil time.Time
+	// transient status-bar hint
+	hintText  string
+	hintUntil time.Time
 
-    // tabs
-    activeTab tabKind
+	// tabs
+	activeTab tabKind
 }
 
 func initialModel() model {
@@ -65,12 +71,12 @@ func initialModel() model {
 	// initialize slash suggestions (hidden at start)
 	m.refreshSlash()
 
-    // transient operations hint in status bar (no 'r'/'u' shortcuts)
-    m.hintText = "操作: ←/→ 切换Tab · Enter 执行 · / 命令模式 · Esc 取消输入 · Ctrl+C 退出"
-    m.hintUntil = time.Now().Add(6 * time.Second)
-    // default tab
-    m.activeTab = tabInstall
-    return m
+	// transient operations hint in status bar (no 'r'/'u' shortcuts)
+	m.hintText = "操作: ←/→ 切换Tab · Enter 执行 · / 命令模式 · Esc 取消输入 · Ctrl+C 退出"
+	m.hintUntil = time.Now().Add(6 * time.Second)
+	// default tab
+	m.activeTab = tabInstall
+	return m
 }
 
 // public constructor for app

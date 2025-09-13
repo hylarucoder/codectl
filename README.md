@@ -65,7 +65,7 @@ codectl update                  # 未来将从 GitHub Releases 自更新
  
 # 查看版本与配置位置
 codectl version                 # 打印 codectl 版本（仅数字，便于脚本）
-codectl config                  # 打印配置目录（通常为用户配置目录）
+codectl config                  # 初始化并打印配置目录（生成 provider/models/mcp 文件）
 
 # 规范（Spec）
 codectl spec                    # 打开交互式 Spec UI（选择表格 + 左侧 Markdown + 右侧日志 + 底部输入）
@@ -87,18 +87,42 @@ codectl mcp ls                  # 列出本地 MCP 服务端
 codectl mcp ls-remote           # 列出远端可用 MCP 服务端（占位）
 // 远端最新版本展示亦可通过 TUI 升级检查查看
 
-# 远端清单来源（provider.json）
-# ls-remote 命令会优先从 ~/.codectl/provider.json 读取：
+# 远端清单来源（provider.json, v2）
+# ls-remote 会优先从 ~/.codectl/provider.json 读取“providers 映射”并扁平化 models：
 #
-# models:
-#   - kimi-k2-0905-preview
-#   - kimi-k2-0711-preview
-# mcp:
-#   - figma-developer-mcp
+# {
+#   "ollama": {
+#     "name": "Ollama",
+#     "base_url": "http://localhost:11434/v1/",
+#     "type": "openai",
+#     "models": [{"name": "Qwen 3 30B", "id": "qwen3:30b"}]
+#   }
+# }
 #
-# 如该文件不存在，将使用内置的内建清单作为回退。
+# 如该文件不存在，将使用内置默认骨架作为回退。
 codectl provider sync           # 手动同步/生成 ~/.codectl/provider.json（可自定义编辑）
 codectl provider schema        # 输出 provider.json 的 JSON Schema（用于校验/补全）
+
+# MCP 配置（mcp.json）
+# MCP 独立保存在 ~/.codectl/mcp.json；仅支持“名称 → 配置”映射结构（不再兼容旧的数组格式）：
+# {
+#   "Framelink Figma MCP": {
+#     "command": "npx",
+#     "args": ["-y", "figma-developer-mcp", "--figma-api-key=YOUR-KEY", "--stdio"]
+#   }
+# }
+
+# Demo（Bubble Tea 示例）
+codectl demo autocomplete       # 运行自动补全示例（按 Tab 补全，Esc/Enter 退出）
+codectl demo chat               # 运行聊天消息示例（Viewport + Textarea）
+codectl demo markdown [file]    # 使用 Glamour 渲染 Markdown（可选文件路径）
+
+# 开发快捷方式（仅 main.go）
+# 通过环境变量在 `go run main.go` 下直接启动 Chat Demo：
+#
+#   CODECTL_DEMO=chat go run main.go
+#
+# 不设置时 `go run main.go` 将按默认行为启动 CLI。
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
@@ -108,7 +132,7 @@ codectl provider schema        # 输出 provider.json 的 JSON Schema（用于�
 - Claude: `claude`、`claude-code`、`anthropic`
 - Gemini: `gemini`、`google`
 
-注意：安装/升级依赖系统已安装 `node`/`npm` 并可访问 npm registry。
+注意：安装/升级依赖系统已安装 `node`/`npm` 并可访问 npm registry。`codectl config` 仅初始化配置文件；实际 CLI 安装/升级请在 TUI 中执行或使用斜杠命令（如 `/add all`、`/upgrade`）。
 
 ## TUI 使用说明
 
@@ -123,6 +147,7 @@ codectl provider schema        # 输出 provider.json 的 JSON Schema（用于�
     - `/upgrade`（`/update`）：批量升级受支持的 CLI
     - `/task`：生成 `vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`（可用 `/task <标题>` 指定标题，自动生成 slug 与时间戳）
     - `/spec`：调用 `codex exec <说明>` 生成规范草案，保存到 `vibe-docs/spec/draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
+    - `/codex`：在 TUI 中直接运行 `codex`（可附加参数，如 `/codex exec "生成一个README模板"`）
     - `/exit`（`/quit`）：退出界面
     - `/init`：在当前 Git 仓库根目录创建 `vibe-docs/AGENTS.md` 模板文件
 

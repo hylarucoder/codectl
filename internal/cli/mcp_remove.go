@@ -14,9 +14,9 @@ func init() {
 }
 
 var mcpRemoveCmd = &cobra.Command{
-	Use:   "remove <server>...",
+	Use:   "remove <name>...",
 	Short: "移除 MCP 服务端",
-	Long:  "从本地配置清单中移除 MCP 服务端标识。TODO：后续支持清理相关缓存/凭据。",
+	Long:  "从本地配置中移除 MCP 服务端（按名称）。",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		items := make([]string, 0, len(args))

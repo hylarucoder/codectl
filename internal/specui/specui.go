@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
-    "unicode/utf8"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -22,8 +22,8 @@ import (
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/charmbracelet/x/xpty"
+	runewidth "github.com/mattn/go-runewidth"
 	"syscall"
-    runewidth "github.com/mattn/go-runewidth"
 
 	"codectl/internal/system"
 )
@@ -156,39 +156,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected != nil {
 				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 			}
-            // resize PTY and VT emulator if terminal mode is on
-            if m.termMode && m.pty != nil {
-                cols, rows := m.termSize()
-                _ = m.pty.Resize(cols, rows)
-                if m.termVT != nil {
-                    m.termVT.Resize(cols, rows)
-                    // refresh render after resize
-                    m.termDirty = true
-                }
-            }
+			// resize PTY and VT emulator if terminal mode is on
+			if m.termMode && m.pty != nil {
+				cols, rows := m.termSize()
+				_ = m.pty.Resize(cols, rows)
+				if m.termVT != nil {
+					m.termVT.Resize(cols, rows)
+					// refresh render after resize
+					m.termDirty = true
+				}
+			}
 		}
 		return m, nil
-    case tea.KeyMsg:
-        // when terminal has focus, forward keys directly to PTY
-        if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
-            // focus escape and app quit
-            switch msg.String() {
-            case "esc":
-                // exit terminal focus back to input
-                m.termFocus = false
-                return m, nil
-            case "ctrl+c":
-                return m, writePTYCmd(m.pty, []byte{0x03})
-            case "ctrl+l":
-                return m, writePTYCmd(m.pty, []byte{0x0c})
-            case "ctrl+z":
-                return m, writePTYCmd(m.pty, []byte{0x1a})
-            }
-            if data := keyToPTYBytes(msg); len(data) > 0 {
-                return m, writePTYCmd(m.pty, data)
-            }
-            return m, nil
-        }
+	case tea.KeyMsg:
+		// when terminal has focus, forward keys directly to PTY
+		if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
+			// focus escape and app quit
+			switch msg.String() {
+			case "esc":
+				// exit terminal focus back to input
+				m.termFocus = false
+				return m, nil
+			case "ctrl+c":
+				return m, writePTYCmd(m.pty, []byte{0x03})
+			case "ctrl+l":
+				return m, writePTYCmd(m.pty, []byte{0x0c})
+			case "ctrl+z":
+				return m, writePTYCmd(m.pty, []byte{0x1a})
+			}
+			if data := keyToPTYBytes(msg); len(data) > 0 {
+				return m, writePTYCmd(m.pty, data)
+			}
+			return m, nil
+		}
 		// global quit when not in terminal focus
 		if key := msg.String(); key == "ctrl+c" || key == "q" {
 			return m, tea.Quit
@@ -207,11 +207,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				idx := m.table.Cursor()
 				if idx >= 0 && idx < len(m.items) {
 					it := m.items[idx]
-                    m.selected = &it
-                    m.page = pageDetail
-                    // default focus to input (line-mode typing)
-                    m.ti.Focus()
-                    m.termFocus = false
+					m.selected = &it
+					m.page = pageDetail
+					// default focus to input (line-mode typing)
+					m.ti.Focus()
+					m.termFocus = false
 					// layout first so content isn't lost when creating viewports
 					m.recalcViewports()
 					// async render (use cache when possible)
@@ -252,33 +252,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case pageDetail:
 			switch msg.String() {
-            case "tab":
-                if m.termMode && m.pty != nil {
-                    m.termFocus = !m.termFocus
-                    if m.termFocus {
-                        m.ti.Blur()
-                    } else {
-                        m.ti.Focus()
-                    }
-                    // re-render to show/hide terminal cursor overlay
-                    m.termDirty = true
-                    return m, nil
-                }
-            case "esc":
-                // back to list
-                m.page = pageSelect
-                m.ti.Blur()
-                m.statusMsg = ""
-                // stop PTY if running
-                if m.pty != nil {
-                    _ = m.pty.Close()
-                    m.pty = nil
-                }
-                if m.termVT != nil {
-                    _ = m.termVT.Close()
-                    m.termVT = nil
-                }
-                return m, nil
+			case "tab":
+				if m.termMode && m.pty != nil {
+					m.termFocus = !m.termFocus
+					if m.termFocus {
+						m.ti.Blur()
+					} else {
+						m.ti.Focus()
+					}
+					// re-render to show/hide terminal cursor overlay
+					m.termDirty = true
+					return m, nil
+				}
+			case "esc":
+				// back to list
+				m.page = pageSelect
+				m.ti.Blur()
+				m.statusMsg = ""
+				// stop PTY if running
+				if m.pty != nil {
+					_ = m.pty.Close()
+					m.pty = nil
+				}
+				if m.termVT != nil {
+					_ = m.termVT.Close()
+					m.termVT = nil
+				}
+				return m, nil
 			case "r":
 				// reload md (async)
 				if m.selected != nil {
@@ -294,36 +294,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 				}
 				return m, nil
-            case "t":
-                // toggle terminal mode (right pane behavior)
-                m.termMode = !m.termMode
-                if m.termMode && m.pty == nil {
-                    // start persistent PTY session
-                    cols, rows := m.termSize()
-                    return m, startPTYCmd(m.cwd, cols, rows)
-                }
-                if !m.termMode && m.pty != nil {
-                    _ = m.pty.Close()
-                    m.pty = nil
-                    if m.termVT != nil {
-                        _ = m.termVT.Close()
-                        m.termVT = nil
-                    }
-                }
-                return m, nil
+			case "t":
+				// toggle terminal mode (right pane behavior)
+				m.termMode = !m.termMode
+				if m.termMode && m.pty == nil {
+					// start persistent PTY session
+					cols, rows := m.termSize()
+					return m, startPTYCmd(m.cwd, cols, rows)
+				}
+				if !m.termMode && m.pty != nil {
+					_ = m.pty.Close()
+					m.pty = nil
+					if m.termVT != nil {
+						_ = m.termVT.Close()
+						m.termVT = nil
+					}
+				}
+				return m, nil
 			}
 			// input handling
-            if msg.Type == tea.KeyEnter && m.ti.Focused() {
-                val := strings.TrimSpace(m.ti.Value())
-                if m.termMode && m.pty != nil {
-                    if val == "" {
-                        return m, nil
-                    }
-                    // write to PTY (use CR to mimic Enter)
-                    line := val + "\r"
-                    m.ti.SetValue("")
-                    return m, writePTYCmd(m.pty, []byte(line))
-                }
+			if msg.Type == tea.KeyEnter && m.ti.Focused() {
+				val := strings.TrimSpace(m.ti.Value())
+				if m.termMode && m.pty != nil {
+					if val == "" {
+						return m, nil
+					}
+					// write to PTY (use CR to mimic Enter)
+					line := val + "\r"
+					m.ti.SetValue("")
+					return m, writePTYCmd(m.pty, []byte(line))
+				}
 				// chat mode: append to log
 				if val != "" {
 					stamp := time.Now().Format("15:04:05")
@@ -354,35 +354,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logVP.SetContent(strings.Join(m.logs, "\n"))
 		m.termMode = false
 		return m, nil
-    case ptyStartedMsg:
-        // initialize VT emulator for right pane
-        cols, rows := m.termSize()
-        emu := vt.NewEmulator(cols, rows)
-        m.pty = msg.Pty
-        m.termVT = emu
-        // kick off first PTY read and render tick
-        return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
-    case ptyChunkMsg:
-        if m.termVT != nil && len(msg.Data) > 0 {
-            _, _ = m.termVT.Write(msg.Data)
-            // mark dirty to re-render into viewport
-            m.termDirty = true
-        }
-        // schedule next read while PTY exists
-        if m.pty != nil {
-            return m, readPTYOnceCmd(m.pty)
-        }
-        return m, nil
-    case termRenderTickMsg:
-        if m.termMode && m.pty != nil {
-            if m.termVT != nil && (m.termDirty || m.termFocus) {
-                m.logVP.SetContent(renderVTRightPane(&m))
-                m.termDirty = false
-            }
-            // continue ticking
-            return m, termTickCmd()
-        }
-        return m, nil
+	case ptyStartedMsg:
+		// initialize VT emulator for right pane
+		cols, rows := m.termSize()
+		emu := vt.NewEmulator(cols, rows)
+		m.pty = msg.Pty
+		m.termVT = emu
+		// kick off first PTY read and render tick
+		return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
+	case ptyChunkMsg:
+		if m.termVT != nil && len(msg.Data) > 0 {
+			_, _ = m.termVT.Write(msg.Data)
+			// mark dirty to re-render into viewport
+			m.termDirty = true
+		}
+		// schedule next read while PTY exists
+		if m.pty != nil {
+			return m, readPTYOnceCmd(m.pty)
+		}
+		return m, nil
+	case termRenderTickMsg:
+		if m.termMode && m.pty != nil {
+			if m.termVT != nil && (m.termDirty || m.termFocus) {
+				m.logVP.SetContent(renderVTRightPane(&m))
+				m.termDirty = false
+			}
+			// continue ticking
+			return m, termTickCmd()
+		}
+		return m, nil
 	case termDoneMsg:
 		// legacy one-shot command result (kept for fallback)
 		m.cmdRunning = false
@@ -930,53 +930,82 @@ func termTickCmd() tea.Cmd {
 
 // Render a segmented status bar with lipgloss backgrounds.
 func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
+	// Lip Gloss layout example-inspired status bar
 	w := width
 	if w <= 0 {
 		w = 100
 	}
 
-	// color palettes
-	leftBG := []string{"24", "30", "60", "66"}
-	rightBG := []string{"22", "23", "28", "29", "57", "60"}
+	barFG := lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}
+	barBG := lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}
 
-	seg := func(text, bg string) string {
-		style := lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color(bg))
-		return style.Render(" " + text + " ")
+	statusBarStyle := lipgloss.NewStyle().
+		Foreground(barFG).
+		Background(barBG)
+
+	keyStyle := lipgloss.NewStyle().
+		Inherit(statusBarStyle).
+		Foreground(lipgloss.Color("#FFFDF5")).
+		Background(lipgloss.Color("#FF5F87")).
+		Padding(0, 1).
+		MarginRight(1)
+
+	nugget := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FFFDF5")).
+		Padding(0, 1)
+
+	nuggetBG := []lipgloss.Color{
+		lipgloss.Color("#A550DF"),
+		lipgloss.Color("#6124DF"),
+		lipgloss.Color("#43BF6D"),
 	}
 
-	lrender := make([]string, 0, len(leftParts))
+	centerStyle := lipgloss.NewStyle().Inherit(statusBarStyle)
+
+	leftItems := make([]string, 0, len(leftParts))
 	for i, s := range leftParts {
-		lrender = append(lrender, seg(s, leftBG[i%len(leftBG)]))
+		if i == 0 {
+			leftItems = append(leftItems, keyStyle.Render(s))
+			continue
+		}
+		bg := nuggetBG[(i-1)%len(nuggetBG)]
+		leftItems = append(leftItems, nugget.Background(bg).Render(s))
 	}
-	rrender := make([]string, 0, len(rightParts))
-	for i, s := range rightParts {
-		rrender = append(rrender, seg(s, rightBG[i%len(rightBG)]))
-	}
-	lstr := strings.Join(lrender, " ")
-	rstr := strings.Join(rrender, " ")
+	leftStr := strings.Join(leftItems, "")
 
-	lw := xansi.StringWidth(lstr)
-	rw := xansi.StringWidth(rstr)
+	rightItems := make([]string, 0, len(rightParts))
+	for i, s := range rightParts {
+		bg := nuggetBG[i%len(nuggetBG)]
+		rightItems = append(rightItems, nugget.Background(bg).Render(s))
+	}
+	rightStr := strings.Join(rightItems, "")
+
+	lw := xansi.StringWidth(leftStr)
+	rw := xansi.StringWidth(rightStr)
 	inner := w
-	minGap := 1
-	if lstr == "" || rstr == "" {
-		minGap = 0
+
+	rebuild := func(parts []string) (string, int) {
+		s := strings.Join(parts, "")
+		return s, xansi.StringWidth(s)
 	}
-	for lw+rw+minGap > inner && len(lrender) > 0 {
-		lrender = lrender[:len(lrender)-1]
-		lstr = strings.Join(lrender, " ")
-		lw = xansi.StringWidth(lstr)
+
+	for lw+rw > inner && len(leftItems) > 1 {
+		leftItems = leftItems[:len(leftItems)-1]
+		leftStr, lw = rebuild(leftItems)
 	}
-	for lw+rw+minGap > inner && len(rrender) > 0 {
-		rrender = rrender[:len(rrender)-1]
-		rstr = strings.Join(rrender, " ")
-		rw = xansi.StringWidth(rstr)
+	for lw+rw > inner && len(rightItems) > 0 {
+		rightItems = rightItems[:len(rightItems)-1]
+		rightStr, rw = rebuild(rightItems)
 	}
-	pad := inner - lw - rw
-	if pad < 0 {
-		pad = 0
+
+	centerWidth := inner - lw - rw
+	if centerWidth < 0 {
+		centerWidth = 0
 	}
-	return lstr + strings.Repeat(" ", pad) + rstr
+	center := centerStyle.Width(centerWidth).Render("")
+
+	bar := leftStr + center + rightStr
+	return statusBarStyle.Width(w).Render(bar)
 }
 
 // renderVTRightPane renders VT screen to string, and when terminal has focus
@@ -984,25 +1013,29 @@ func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
 // cell at that position. This is a presentation-only overlay; it does not
 // mutate the emulator state.
 func renderVTRightPane(m *model) string {
-    if m.termVT == nil {
-        return ""
-    }
-    out := m.termVT.Render()
-    if !m.termFocus {
-        return out
-    }
-    // Cursor column/row
-    pos := m.termVT.CursorPosition()
-    cx, cy := pos.X, pos.Y
-    if cx < 0 { cx = 0 }
-    if cy < 0 { cy = 0 }
-    lines := strings.Split(out, "\r\n")
-    // ensure enough lines
-    for len(lines) <= cy {
-        lines = append(lines, "")
-    }
-    lines[cy] = overlayCursorOnAnsiLine(lines[cy], cx)
-    return strings.Join(lines, "\r\n")
+	if m.termVT == nil {
+		return ""
+	}
+	out := m.termVT.Render()
+	if !m.termFocus {
+		return out
+	}
+	// Cursor column/row
+	pos := m.termVT.CursorPosition()
+	cx, cy := pos.X, pos.Y
+	if cx < 0 {
+		cx = 0
+	}
+	if cy < 0 {
+		cy = 0
+	}
+	lines := strings.Split(out, "\r\n")
+	// ensure enough lines
+	for len(lines) <= cy {
+		lines = append(lines, "")
+	}
+	lines[cy] = overlayCursorOnAnsiLine(lines[cy], cx)
+	return strings.Join(lines, "\r\n")
 }
 
 // overlayCursorOnAnsiLine returns the line with an inverse-video cursor at
@@ -1010,69 +1043,79 @@ func renderVTRightPane(m *model) string {
 // display width correctly across runes. If the column is past the end, pads
 // spaces and appends an inverse space.
 func overlayCursorOnAnsiLine(line string, col int) string {
-    if col < 0 { col = 0 }
-    // Fast path: if no ANSI and short
-    // Walk the string tracking visible column, skipping ANSI sequences
-    var b strings.Builder
-    b.Grow(len(line) + 16)
-    visible := 0
-    i := 0
-    for i < len(line) {
-        if line[i] == 0x1b { // ESC ... CSI or SGR
-            j := i + 1
-            if j < len(line) && (line[j] == '[' || line[j] == ']' || line[j] == '(' || line[j] == ')' || line[j] == 'P') {
-                j++
-                for j < len(line) {
-                    ch := line[j]
-                    // OSC (ESC]) ends with BEL (0x07) or ST (ESC\)
-                    if line[i+1] == ']' {
-                        if ch == 0x07 { j++; break }
-                        if ch == '\\' && j > i+1 && line[j-1] == 0x1b { j++; break }
-                    }
-                    // CSI/other: final byte in 0x40..0x7E
-                    if ch >= 0x40 && ch <= 0x7e {
-                        j++
-                        break
-                    }
-                    j++
-                }
-            }
-            b.WriteString(line[i:j])
-            i = j
-            continue
-        }
-        r, sz := utf8.DecodeRuneInString(line[i:])
-        if r == utf8.RuneError && sz == 1 {
-            // write raw byte
-            if visible == col {
-                b.WriteString("\x1b[7m")
-                b.WriteByte(line[i])
-                b.WriteString("\x1b[27m")
-            } else {
-                b.WriteByte(line[i])
-            }
-            visible++
-            i++
-            continue
-        }
-        width := runewidth.RuneWidth(r)
-        if width <= 0 { width = 1 }
-        if visible == col {
-            b.WriteString("\x1b[7m")
-            b.WriteString(line[i : i+sz])
-            b.WriteString("\x1b[27m")
-        } else {
-            b.WriteString(line[i : i+sz])
-        }
-        visible += width
-        i += sz
-    }
-    if col >= visible {
-        // pad spaces up to col, then inverse a space
-        if pad := col - visible; pad > 0 {
-            b.WriteString(strings.Repeat(" ", pad))
-        }
-        b.WriteString("\x1b[7m \x1b[27m")
-    }
-    return b.String()
+	if col < 0 {
+		col = 0
+	}
+	// Fast path: if no ANSI and short
+	// Walk the string tracking visible column, skipping ANSI sequences
+	var b strings.Builder
+	b.Grow(len(line) + 16)
+	visible := 0
+	i := 0
+	for i < len(line) {
+		if line[i] == 0x1b { // ESC ... CSI or SGR
+			j := i + 1
+			if j < len(line) && (line[j] == '[' || line[j] == ']' || line[j] == '(' || line[j] == ')' || line[j] == 'P') {
+				j++
+				for j < len(line) {
+					ch := line[j]
+					// OSC (ESC]) ends with BEL (0x07) or ST (ESC\)
+					if line[i+1] == ']' {
+						if ch == 0x07 {
+							j++
+							break
+						}
+						if ch == '\\' && j > i+1 && line[j-1] == 0x1b {
+							j++
+							break
+						}
+					}
+					// CSI/other: final byte in 0x40..0x7E
+					if ch >= 0x40 && ch <= 0x7e {
+						j++
+						break
+					}
+					j++
+				}
+			}
+			b.WriteString(line[i:j])
+			i = j
+			continue
+		}
+		r, sz := utf8.DecodeRuneInString(line[i:])
+		if r == utf8.RuneError && sz == 1 {
+			// write raw byte
+			if visible == col {
+				b.WriteString("\x1b[7m")
+				b.WriteByte(line[i])
+				b.WriteString("\x1b[27m")
+			} else {
+				b.WriteByte(line[i])
+			}
+			visible++
+			i++
+			continue
+		}
+		width := runewidth.RuneWidth(r)
+		if width <= 0 {
+			width = 1
+		}
+		if visible == col {
+			b.WriteString("\x1b[7m")
+			b.WriteString(line[i : i+sz])
+			b.WriteString("\x1b[27m")
+		} else {
+			b.WriteString(line[i : i+sz])
+		}
+		visible += width
+		i += sz
+	}
+	if col >= visible {
+		// pad spaces up to col, then inverse a space
+		if pad := col - visible; pad > 0 {
+			b.WriteString(strings.Repeat(" ", pad))
+		}
+		b.WriteString("\x1b[7m \x1b[27m")
+	}
+	return b.String()
 }

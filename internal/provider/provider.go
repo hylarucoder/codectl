@@ -1,78 +1,185 @@
 package provider
 
 import (
-    "encoding/json"
-    "errors"
-    "os"
-    "path/filepath"
-    "sort"
-    "strings"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 )
 
-// Catalog represents a simple provider catalog file.
 // Default JSON path: ~/.codectl/provider.json
-type Catalog struct {
-    Models []string `json:"models" jsonschema:"title=Models,description=Remote model identifiers used by codectl ls-remote and related commands,example=kimi-k2-0905-preview"`
-    MCP    []string `json:"mcp" jsonschema:"title=MCP Servers,description=Remote MCP server identifiers discoverable by codectl,example=figma-developer-mcp"`
-}
-
-// defaultCatalog holds a minimal built-in fallback.
-var defaultCatalog = Catalog{
-	Models: []string{
-		"kimi-k2-0905-preview",
-		"kimi-k2-0711-preview",
-	},
-	MCP: []string{
-		"figma-developer-mcp",
-	},
-}
 
 // Path returns the JSON catalog path (~/.codectl/provider.json).
 func Path() (string, error) { return pathJSON() }
 
 // pathJSON returns ~/.codectl/provider.json
 func pathJSON() (string, error) {
-    home, err := os.UserHomeDir()
-    if err != nil || strings.TrimSpace(home) == "" {
-        return "", errors.New("cannot determine user home directory")
-    }
-    return filepath.Join(home, ".codectl", "provider.json"), nil
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return "", errors.New("cannot determine user home directory")
+	}
+	return filepath.Join(home, ".codectl", "provider.json"), nil
 }
 
-//
+// ========== V2 Catalog (providers map) ==========
 
-// Load reads the catalog from ~/.codectl/provider.json.
-// If the file does not exist, returns defaultCatalog and no error.
-func Load() (Catalog, error) {
-    p, err := pathJSON()
-    if err != nil {
-        return defaultCatalog, err
-    }
-    b, err := os.ReadFile(p)
-    if err != nil {
-        if os.IsNotExist(err) {
-            return defaultCatalog, nil
-        }
-        return defaultCatalog, err
-    }
-    var cfg Catalog
-    if err := json.Unmarshal(b, &cfg); err != nil {
-        return defaultCatalog, err
-    }
-    cfg = normalizeCatalog(cfg)
-    if len(cfg.Models) == 0 {
-        cfg.Models = append([]string(nil), defaultCatalog.Models...)
-    }
-    if len(cfg.MCP) == 0 {
-        cfg.MCP = append([]string(nil), defaultCatalog.MCP...)
-    }
-    return cfg, nil
+// Model describes a model entry under a provider in v2.
+type Model struct {
+	Name             string `json:"name,omitempty"`
+	ID               string `json:"id,omitempty"`
+	ContextWindow    int    `json:"context_window,omitempty"`
+	DefaultMaxTokens int    `json:"default_max_tokens,omitempty"`
 }
 
-func normalizeCatalog(cfg Catalog) Catalog {
-    cfg.Models = normalizeList(cfg.Models)
-    cfg.MCP = normalizeList(cfg.MCP)
-    return cfg
+// Provider describes a single provider entry in v2.
+type Provider struct {
+	Name    string  `json:"name,omitempty"`
+	BaseURL string  `json:"base_url,omitempty"`
+	Type    string  `json:"type,omitempty"`
+	Models  []Model `json:"models,omitempty"`
+}
+
+// CatalogV2 represents the v2 shape: top-level providers (arbitrary keys) plus optional MCP list.
+// We implement custom marshal/unmarshal to keep the top-level as a single object.
+type CatalogV2 struct {
+	Providers map[string]Provider `json:"-"`
+}
+
+func (c *CatalogV2) UnmarshalJSON(b []byte) error {
+	type rawObj = map[string]json.RawMessage
+	var root rawObj
+	if err := json.Unmarshal(b, &root); err != nil {
+		return err
+	}
+	c.Providers = map[string]Provider{}
+	for k, v := range root {
+		if k == "mcp" { // legacy: ignore in v2
+			continue
+		}
+		var p Provider
+		if err := json.Unmarshal(v, &p); err != nil {
+			// skip invalid provider entries
+			continue
+		}
+		c.Providers[k] = p
+	}
+	c.normalize()
+	return nil
+}
+
+func (c CatalogV2) MarshalJSON() ([]byte, error) {
+	// Build an ordered map to keep stable output
+	out := map[string]any{}
+	// sort provider keys
+	keys := make([]string, 0, len(c.Providers))
+	for k := range c.Providers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		// normalize per provider models
+		p := c.Providers[k]
+		// de-dup models by ID, prefer ID then Name
+		seen := map[string]struct{}{}
+		cleaned := make([]Model, 0, len(p.Models))
+		for _, m := range p.Models {
+			id := strings.TrimSpace(m.ID)
+			name := strings.TrimSpace(m.Name)
+			if id == "" && name == "" {
+				continue
+			}
+			key := id
+			if key == "" {
+				key = name
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			m.ID = id
+			m.Name = name
+			cleaned = append(cleaned, m)
+		}
+		p.Models = cleaned
+		out[k] = p
+	}
+	return json.MarshalIndent(out, "", "  ")
+}
+
+func (c *CatalogV2) normalize() {
+	// normalize providers models (de-dup IDs)
+	for k, p := range c.Providers {
+		seen := map[string]struct{}{}
+		cleaned := make([]Model, 0, len(p.Models))
+		for _, m := range p.Models {
+			id := strings.TrimSpace(m.ID)
+			name := strings.TrimSpace(m.Name)
+			if id == "" && name == "" {
+				continue
+			}
+			key := id
+			if key == "" {
+				key = name
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			m.ID = id
+			m.Name = name
+			cleaned = append(cleaned, m)
+		}
+		p.Models = cleaned
+		c.Providers[k] = p
+	}
+}
+
+// DefaultV2 returns a minimal v2 catalog skeleton.
+func DefaultV2() CatalogV2 {
+	return CatalogV2{
+		Providers: map[string]Provider{
+			"ollama": {Name: "Ollama", Type: "openai", BaseURL: "http://localhost:11434/v1/", Models: []Model{}},
+		},
+	}
+}
+
+// LoadV2 reads v2 catalog; on missing file returns DefaultV2.
+func LoadV2() (CatalogV2, error) {
+	p, err := pathJSON()
+	if err != nil {
+		return DefaultV2(), err
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DefaultV2(), nil
+		}
+		return DefaultV2(), err
+	}
+	var cfg CatalogV2
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return DefaultV2(), err
+	}
+	return cfg, nil
+}
+
+// SaveV2 writes v2 catalog to ~/.codectl/provider.json.
+func SaveV2(c CatalogV2) error {
+	c.normalize()
+	p, err := pathJSON()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	b, err := json.Marshal(c) // indent handled by MarshalJSON
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, b, 0o644)
 }
 
 func normalizeList(in []string) []string {
@@ -92,33 +199,29 @@ func normalizeList(in []string) []string {
 	return out
 }
 
-// Save writes the catalog to ~/.codectl/provider.json, creating parent dirs as needed.
-func Save(c Catalog) error {
-    // normalize and sort
-    c = normalizeCatalog(c)
-
-    p, err := pathJSON()
-    if err != nil {
-        return err
-    }
-    if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-        return err
-    }
-    b, err := json.MarshalIndent(c, "", "  ")
-    if err != nil {
-        return err
-    }
-    return os.WriteFile(p, b, 0o644)
-}
-
-// Models returns the remote models list.
+// Models returns the flattened remote model identifiers from provider.json (v2).
 func Models() []string {
-    c, _ := Load()
-    return c.Models
-}
-
-// MCPServers returns the remote MCP servers list.
-func MCPServers() []string {
-    c, _ := Load()
-    return c.MCP
+	cfg, err := LoadV2()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 16)
+	for _, p := range cfg.Providers {
+		for _, m := range p.Models {
+			id := strings.TrimSpace(m.ID)
+			if id == "" {
+				id = strings.TrimSpace(m.Name)
+			}
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return normalizeList(out)
 }

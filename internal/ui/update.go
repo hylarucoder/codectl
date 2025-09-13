@@ -2,8 +2,13 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/lipgloss"
 
 	"codectl/internal/system"
 	"codectl/internal/tools"
@@ -210,21 +215,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.upgrading {
 			return m, nil
 		}
-		m.upgrading = true
-		// transient hint for upgrade mode
-		m.hintText = "操作: Ctrl+C 退出"
-		m.hintUntil = time.Now().Add(6 * time.Second)
-		m.upgradeNotes = make(map[tools.ToolID]string, len(tools.Tools))
-		total := 0
+		// Build sequential upgrade list (tools with npm package)
+		list := make([]tools.ToolInfo, 0, len(tools.Tools))
 		for _, t := range tools.Tools {
 			if t.Package != "" {
-				total++
-				m.upgradeNotes[t.ID] = "升级中…"
+				list = append(list, t)
 			}
 		}
-		m.upgradeTotal = total
+		if len(list) == 0 {
+			return m, func() tea.Msg { return noticeMsg("没有可升级的 CLI") }
+		}
+		m.upgrading = true
+		m.upList = list
+		m.upIndex = 0
+		m.upgradeTotal = len(list)
 		m.upgradeDone = 0
-		return m, upgradeAllCmd()
+		// init spinner and progress
+		sp := spinner.New()
+		sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
+		m.upSpinner = sp
+		pr := progress.New(progress.WithDefaultGradient(), progress.WithWidth(40), progress.WithoutPercentage())
+		m.upProgress = pr
+		// transient hint for upgrade mode
+		m.hintText = "升级中: Esc/Ctrl+C 取消"
+		m.hintUntil = time.Now().Add(6 * time.Second)
+		// kick off first upgrade and spinner
+		cmds := []tea.Cmd{m.upSpinner.Tick}
+		// start with 0%
+		cmds = append(cmds, m.upProgress.SetPercent(0))
+		cmds = append(cmds, upgradeOneCmd(m.upList[m.upIndex]))
+		return m, tea.Batch(cmds...)
 	case quitMsg:
 		m.quitting = true
 		return m, tea.Quit
@@ -232,15 +252,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.git = msg.info
 		return m, nil
 	case upgradeProgressMsg:
-		// update individual tool upgrade note
-		m.upgradeNotes[msg.id] = msg.note
-		m.upgradeDone++
-		if m.upgradeDone >= m.upgradeTotal {
-			// all done; trigger re-check
-			m.upgrading = false
-			m.results = make(map[tools.ToolID]tools.CheckResult, len(tools.Tools))
-			m.checking = true
-			return m, checkAllCmd()
+		// Sequentially process next tool and update progress
+		if m.upgrading && len(m.upList) > 0 {
+			// Print a success/failure line above the TUI
+			_ = tea.Printf("✓ %s %s", string(msg.id), msg.note)
+			m.upgradeDone++
+			m.upIndex++
+			// progress percent
+			var cmds []tea.Cmd
+			if m.upgradeTotal > 0 {
+				pct := float64(m.upgradeDone) / float64(m.upgradeTotal)
+				cmds = append(cmds, m.upProgress.SetPercent(pct))
+			}
+			if m.upIndex >= len(m.upList) {
+				// Completed; refresh checks and exit upgrade mode
+				m.upgrading = false
+				m.results = make(map[tools.ToolID]tools.CheckResult, len(tools.Tools))
+				m.checking = true
+				cmds = append(cmds, checkAllCmd())
+				return m, tea.Batch(cmds...)
+			}
+			// Trigger next upgrade
+			cmds = append(cmds, upgradeOneCmd(m.upList[m.upIndex]))
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+	case spinner.TickMsg:
+		if m.upgrading {
+			var cmd tea.Cmd
+			m.upSpinner, cmd = m.upSpinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+	case progress.FrameMsg:
+		if m.upgrading {
+			nm, cmd := m.upProgress.Update(msg)
+			if newModel, ok := nm.(progress.Model); ok {
+				m.upProgress = newModel
+			}
+			return m, cmd
+		}
+		return m, nil
+	case codexFinishedMsg:
+		if msg.err != nil {
+			m.notice = fmt.Sprintf("codex 退出（错误）：%v", msg.err)
+		} else {
+			m.notice = "codex 已退出"
 		}
 		return m, nil
 	}
@@ -264,16 +321,16 @@ func gitInfoCmd(dir string) tea.Cmd {
 
 // performActiveTab triggers the action for the current tab.
 func (m model) performActiveTab() tea.Cmd {
-    switch m.activeTab {
-    case tabInstall:
-        return m.execSlashCmd("/add", "all")
-    case tabUpdate:
-        return m.execSlashCmd("/upgrade", "")
-    case tabSync:
-        return m.execSlashCmd("/sync", "")
-    case tabClean:
-        return m.execSlashCmd("/remove", "all")
-    default:
-        return nil
-    }
+	switch m.activeTab {
+	case tabInstall:
+		return m.execSlashCmd("/add", "all")
+	case tabUpdate:
+		return m.execSlashCmd("/upgrade", "")
+	case tabSync:
+		return m.execSlashCmd("/sync", "")
+	case tabClean:
+		return m.execSlashCmd("/remove", "all")
+	default:
+		return nil
+	}
 }

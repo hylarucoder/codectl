@@ -18,32 +18,40 @@ func (m model) View() string {
 
 	b := &strings.Builder{}
 	if m.upgrading {
+		// header and tabs
 		b.WriteString(renderBanner(m.cwd, nil))
-		// tabs under banner
 		b.WriteString("\n")
 		b.WriteString(renderTabs(m.width, m.activeTab))
-		fmt.Fprintf(b, "\n  codectl — 正在升级\n\n")
-		// show per-tool upgrade status for tools with npm package
-		for _, t := range tools.Tools {
-			if t.Package == "" {
-				continue
-			}
-			note, ok := m.upgradeNotes[t.ID]
-			if !ok || note == "" {
-				note = "…"
-			}
-			fmt.Fprintf(b, "  • %-12s: %s\n", t.ID, note)
+		b.WriteString("\n  codectl — 正在升级 CLI\n\n")
+
+		// Draw spinner + info + progress bar + count, inspired by package-manager example
+		// current package name
+		current := ""
+		if m.upIndex < len(m.upList) {
+			current = string(m.upList[m.upIndex].ID)
 		}
-		fmt.Fprintf(b, "\n  进度: %d/%d 完成\n", m.upgradeDone, m.upgradeTotal)
-		b.WriteString("\n")
-		// single message line above input: prefer notice (if any), else lastInput
+		// available cells for info text between spinner and progress
+		spin := m.upSpinner.View() + " "
+		prog := m.upProgress.View()
+		n := m.upgradeTotal
+		wnum := lipgloss.Width(fmt.Sprintf("%d", n))
+		pkgCount := fmt.Sprintf(" %*d/%*d", wnum, m.upgradeDone, wnum, n)
+		cellsAvail := maxInt(0, m.width-lipgloss.Width(spin+prog+pkgCount))
+		pkgName := lipgloss.NewStyle().Foreground(lipgloss.Color("211")).Render(current)
+		info := lipgloss.NewStyle().MaxWidth(cellsAvail).Render("Upgrading " + pkgName)
+		cellsRemaining := maxInt(0, m.width-lipgloss.Width(spin+info+prog+pkgCount))
+		gap := strings.Repeat(" ", cellsRemaining)
+		b.WriteString("  ")
+		b.WriteString(spin + info + gap + prog + pkgCount)
+		b.WriteString("\n\n")
+
+		// message above input (optional)
 		if m.notice != "" {
 			fmt.Fprintf(b, "  %s\n\n", m.notice)
 		} else if m.lastInput != "" {
 			fmt.Fprintf(b, "  %s\n\n", m.lastInput)
 		}
 		b.WriteString(renderInputUI(m.width, m.ti.View()))
-		// status bar just below input (hidden when slash dropdown is visible)
 		if !(m.ti.Focused() && m.slashVisible) {
 			b.WriteString(m.renderStatusBarLine())
 		}
@@ -154,4 +162,12 @@ func (m model) renderStatusBarLine() string {
 		}
 	}
 	return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
+}
+
+// helper used locally for layout
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
