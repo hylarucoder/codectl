@@ -19,6 +19,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/cellbuf"
+	"github.com/charmbracelet/x/xpty"
 	"syscall"
 
 	"codectl/internal/system"
@@ -68,6 +70,9 @@ type model struct {
 	// terminal mode state
 	termMode   bool
 	cmdRunning bool
+	pty        xpty.Pty
+	termScr    *cellbuf.Screen
+	termWr     *cellbuf.ScreenWriter
 }
 
 func initialModel() model {
@@ -139,6 +144,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.selected != nil {
 				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 			}
+			// resize PTY and cell screen if terminal mode is on
+			if m.termMode && m.pty != nil {
+				cols, rows := m.termSize()
+				_ = m.pty.Resize(cols, rows)
+				// reset screen to new size
+				scr := cellbuf.NewScreen(nil, cols, rows, &cellbuf.ScreenOptions{Term: "xterm-256color"})
+				m.termScr = scr
+				m.termWr = cellbuf.NewScreenWriter(scr)
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -183,6 +197,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.page = pageSelect
 				m.ti.Blur()
 				m.statusMsg = ""
+				// stop PTY if running
+				if m.pty != nil {
+					_ = m.pty.Close()
+					m.pty = nil
+				}
 				return m, nil
 			case "r":
 				// reload md (async)
@@ -202,22 +221,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "t":
 				// toggle terminal mode (right pane behavior)
 				m.termMode = !m.termMode
+				if m.termMode && m.pty == nil {
+					// start persistent PTY session
+					cols, rows := m.termSize()
+					return m, startPTYCmd(m.cwd, cols, rows)
+				}
+				if !m.termMode && m.pty != nil {
+					_ = m.pty.Close()
+					m.pty = nil
+				}
 				return m, nil
 			}
 			// input handling
 			if msg.Type == tea.KeyEnter && m.ti.Focused() {
 				val := strings.TrimSpace(m.ti.Value())
-				if m.termMode {
-					if val == "" || m.cmdRunning {
+				if m.termMode && m.pty != nil {
+					if val == "" {
 						return m, nil
 					}
-					// append prompt line
+					// echo input into screen like a terminal prompt
 					m.logs = append(m.logs, ">$ "+val)
 					m.logVP.SetContent(strings.Join(m.logs, "\n"))
 					m.logVP.GotoBottom()
+					// write to PTY
+					line := val + "\n"
 					m.ti.SetValue("")
-					m.cmdRunning = true
-					return m, runShellCmd(m.root, val, 120*time.Second)
+					return m, writePTYCmd(m.pty, []byte(line))
 				}
 				// chat mode: append to log
 				if val != "" {
@@ -244,17 +273,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tickCmd()
+	case ptyStartErrMsg:
+		m.logs = append(m.logs, "[pty error] "+msg.Err)
+		m.logVP.SetContent(strings.Join(m.logs, "\n"))
+		m.termMode = false
+		return m, nil
+	case ptyStartedMsg:
+		// initialize cell screen for right pane
+		cols, rows := m.termSize()
+		scr := cellbuf.NewScreen(nil, cols, rows, &cellbuf.ScreenOptions{Term: "xterm-256color"})
+		wr := cellbuf.NewScreenWriter(scr)
+		m.pty = msg.Pty
+		m.termScr = scr
+		m.termWr = wr
+		// kick off first read
+		return m, readPTYOnceCmd(m.pty)
+	case ptyChunkMsg:
+		if m.termWr != nil && len(msg.Data) > 0 {
+			_, _ = m.termWr.Write(msg.Data)
+			// render screen into viewport
+			m.logVP.SetContent(cellbuf.Render(m.termScr))
+		}
+		// schedule next read while PTY exists
+		if m.pty != nil {
+			return m, readPTYOnceCmd(m.pty)
+		}
+		return m, nil
 	case termDoneMsg:
+		// legacy one-shot command result (kept for fallback)
 		m.cmdRunning = false
-		// append output and exit code
 		if strings.TrimSpace(msg.Out) != "" {
-			// split into lines to merge with logs
 			outs := strings.Split(strings.ReplaceAll(msg.Out, "\r\n", "\n"), "\n")
 			for _, ln := range outs {
-				if ln == "" {
-					continue
+				if ln != "" {
+					m.logs = append(m.logs, ln)
 				}
-				m.logs = append(m.logs, ln)
 			}
 		}
 		if msg.Exit != 0 {
@@ -373,6 +426,19 @@ func (m *model) recalcViewports() {
 	// viewport-only adjustments; caller decides whether to rerender
 }
 
+// termSize returns terminal columns and rows for the right pane
+func (m model) termSize() (cols, rows int) {
+	cols = m.logVP.Width
+	rows = m.logVP.Height
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+	return
+}
+
 func (m *model) buildRenderer() {
 	// Always rebuild with current width to ensure proper wrapping
 	width := m.mdVP.Width
@@ -459,6 +525,66 @@ func runShellCmd(cwd string, line string, timeout time.Duration) tea.Cmd {
 			}
 		}
 		return termDoneMsg{Out: string(out), Exit: exit}
+	}
+}
+
+// PTY startup message
+type ptyStartedMsg struct {
+	Pty  xpty.Pty
+	Cols int
+	Rows int
+}
+
+type ptyStartErrMsg struct{ Err string }
+
+type ptyChunkMsg struct{ Data []byte }
+
+// startPTYCmd starts a persistent shell on a PTY with given size
+func startPTYCmd(cwd string, cols, rows int) tea.Cmd {
+	return func() tea.Msg {
+		p, err := xpty.NewPty(cols, rows)
+		if err != nil {
+			return ptyStartErrMsg{Err: err.Error()}
+		}
+		sh := os.Getenv("SHELL")
+		if sh == "" {
+			if _, err := exec.LookPath("bash"); err == nil {
+				sh = "bash"
+			} else {
+				sh = "sh"
+			}
+		}
+		cmd := exec.Command(sh, "-i")
+		cmd.Dir = cwd
+		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+		if err := p.Start(cmd); err != nil {
+			_ = p.Close()
+			return ptyStartErrMsg{Err: err.Error()}
+		}
+		return ptyStartedMsg{Pty: p, Cols: cols, Rows: rows}
+	}
+}
+
+// schedule a single PTY read
+func readPTYOnceCmd(p xpty.Pty) tea.Cmd {
+	return func() tea.Msg {
+		buf := make([]byte, 4096)
+		n, err := p.Read(buf)
+		if n > 0 {
+			return ptyChunkMsg{Data: buf[:n]}
+		}
+		if err != nil {
+			return termDoneMsg{Out: err.Error(), Exit: 0}
+		}
+		return nil
+	}
+}
+
+// write to PTY
+func writePTYCmd(p xpty.Pty, data []byte) tea.Cmd {
+	return func() tea.Msg {
+		_, _ = p.Write(data)
+		return nil
 	}
 }
 
