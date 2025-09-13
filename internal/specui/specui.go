@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	gstyles "github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
@@ -543,7 +544,7 @@ func (m *model) buildRenderer() {
 		wrap = 10
 	}
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle(gstyles.DarkStyle),
 		glamour.WithWordWrap(wrap),
 	)
 	m.renderer = r
@@ -586,7 +587,7 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 			wrap = 10
 		}
 		r, _ := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
+			glamour.WithStandardStyle(gstyles.DarkStyle),
 			glamour.WithWordWrap(wrap),
 		)
 		if out, err := r.Render(content); err == nil {
