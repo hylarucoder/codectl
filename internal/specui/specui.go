@@ -119,7 +119,7 @@ func initialModel() model {
 
 	// input for conversation
 	ti := textinput.New()
-	ti.Placeholder = "输入对话并回车，Esc 返回列表"
+	ti.Placeholder = "输入对话（前缀 ! 执行命令），Esc 返回列表"
 	ti.Prompt = "> "
 	ti.CharLimit = 4096
 
@@ -293,14 +293,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// input handling
 			if msg.Type == tea.KeyEnter && m.ti.Focused() {
 				val := strings.TrimSpace(m.ti.Value())
-				if m.termMode && m.pty != nil {
-					if val == "" {
+				// one-shot shell command: prefix with '!'
+				if strings.HasPrefix(val, "!") {
+					cmdline := strings.TrimSpace(strings.TrimPrefix(val, "!"))
+					m.ti.SetValue("")
+					if cmdline == "" {
 						return m, nil
 					}
-					// write to PTY (use CR to mimic Enter)
-					line := val + "\r"
-					m.ti.SetValue("")
-					return m, writePTYCmd(m.pty, []byte(line))
+					// echo the command into the log
+					m.logs = append(m.logs, "> "+cmdline)
+					m.logVP.SetContent(strings.Join(m.logs, "\n"))
+					m.logVP.GotoBottom()
+					return m, runShellCmd(m.cwd, cmdline, 20*time.Second)
 				}
 				// chat mode: append to log
 				if val != "" {
@@ -864,6 +868,7 @@ func (m model) renderWorkbar() string {
 			left = append(left, "No file selected")
 		}
 		left = append(left, "↵ 记录")
+		left = append(left, "! 执行")
 		left = append(left, "r 载入")
 		left = append(left, "f 快速")
 		// terminal binding removed: no 't'/'Tab' hints
