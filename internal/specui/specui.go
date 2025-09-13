@@ -385,12 +385,20 @@ func (m model) View() string {
 			m.renderWorkbar(),
 		}, "\n")
 	case pageDetail:
-		// top: split left (md) and right (log)
+		// choose styles based on focus
+		rightBox := boxStyle
+		inputBox := boxStyle
+		if m.termMode && m.termFocus {
+			rightBox = boxStyleFocus
+		} else if m.ti.Focused() {
+			inputBox = boxStyleFocus
+		}
+		// top: split left (md) and right (log/terminal)
 		left := boxStyle.Render(m.mdVP.View())
-		right := boxStyle.Render(m.logVP.View())
+		right := rightBox.Render(m.logVP.View())
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
-		bottom := boxStyle.Render(m.ti.View()) + "\n" + m.renderWorkbar()
+		bottom := inputBox.Render(m.ti.View()) + "\n" + m.renderWorkbar()
 		return lipgloss.JoinVertical(lipgloss.Left, top, bottom)
 	default:
 		return ""
@@ -401,6 +409,10 @@ var (
 	boxStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("243")).
+			Padding(0, 1)
+	boxStyleFocus = lipgloss.NewStyle().
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("63")).
 			Padding(0, 1)
 	dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 )
