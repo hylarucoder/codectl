@@ -76,7 +76,6 @@ codectl config                  # 打印配置目录（通常为用户配置目�
 
 # 规范（Spec）
 codectl spec                    # 打开交互式 Spec UI（选择表格 + 左侧 Markdown + 右侧日志 + 底部输入）
-codectl spec ui                 # 同上（显式子命令）
 codectl spec new "<说明>"       # 调用 codex exec 生成规范草案，保存到 vibe-docs/spec
 
 # 校验文档 frontmatter（MDX）
@@ -95,8 +94,8 @@ codectl mcp ls                  # 列出本地 MCP 服务端
 codectl mcp ls-remote           # 列出远端可用 MCP 服务端（占位）
 codectl cli ls-remote           # 列出受支持工具的远端最新版本（npm）
 
-# 远端清单来源（provider.yaml）
-# ls-remote 命令会优先从 ~/.codectl/provider.yaml 读取：
+# 远端清单来源（provider.json）
+# ls-remote 命令会优先从 ~/.codectl/provider.json 读取：
 #
 # models:
 #   - kimi-k2-0905-preview
@@ -105,6 +104,7 @@ codectl cli ls-remote           # 列出受支持工具的远端最新版本（n
 #   - figma-developer-mcp
 #
 # 如该文件不存在，将使用内置的内建清单作为回退。
+codectl provider sync           # 手动同步/生成 ~/.codectl/provider.json（可自定义编辑）
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
@@ -157,8 +157,8 @@ codectl cli ls-remote           # 列出受支持工具的远端最新版本（n
 - 0.3 配置向导：
     - 引导写入/更新环境变量与常见 CLI 的配置文件。
     - 支持创建与切换配置档（profiles）。
-- 0.4 生态与 MCP：
-    - 输出统一配置（如 `~/.codectl/config.yaml`），并规划 MCP 客户端/服务端的基础管理能力（配置与健康检查）。
+    - 0.4 生态与 MCP：
+    - 输出统一配置（如 `~/.codectl/config.json`），并规划 MCP 客户端/服务端的基础管理能力（配置与健康检查）。
     - 常见编辑器/终端插件的配置提示与自动化脚本。
 - 0.5 可扩展提供商：
     - 支持更多 LLM/代码智能体与企业代理/私有化部署。

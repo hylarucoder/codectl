@@ -12,7 +12,6 @@ require (
 	github.com/charmbracelet/x/xpty v0.1.3
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/spf13/cobra v1.10.1
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

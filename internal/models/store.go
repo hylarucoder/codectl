@@ -168,6 +168,6 @@ func Remove(toRemove []string) (removed []string, missing []string, err error) {
 
 // ListRemote returns a static list of known remote models as a placeholder.
 func ListRemote() []string {
-	// Load from ~/.codectl/provider.yaml (with built-in fallback)
+	// Load from provider catalog (~/.codectl/provider.json)
 	return provider.Models()
 }

@@ -1,20 +1,19 @@
 package provider
 
 import (
-	"errors"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-
-	"gopkg.in/yaml.v3"
+    "encoding/json"
+    "errors"
+    "os"
+    "path/filepath"
+    "sort"
+    "strings"
 )
 
 // Catalog represents a simple provider catalog file.
-// Path: ~/.codectl/provider.yaml
+// Default JSON path: ~/.codectl/provider.json
 type Catalog struct {
-	Models []string `yaml:"models"`
-	MCP    []string `yaml:"mcp"`
+    Models []string `json:"models"`
+    MCP    []string `json:"mcp"`
 }
 
 // defaultCatalog holds a minimal built-in fallback.
@@ -28,44 +27,52 @@ var defaultCatalog = Catalog{
 	},
 }
 
-// path returns ~/.codectl/provider.yaml
-func path() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil || strings.TrimSpace(home) == "" {
-		return "", errors.New("cannot determine user home directory")
-	}
-	return filepath.Join(home, ".codectl", "provider.yaml"), nil
+// Path returns the JSON catalog path (~/.codectl/provider.json).
+func Path() (string, error) { return pathJSON() }
+
+// pathJSON returns ~/.codectl/provider.json
+func pathJSON() (string, error) {
+    home, err := os.UserHomeDir()
+    if err != nil || strings.TrimSpace(home) == "" {
+        return "", errors.New("cannot determine user home directory")
+    }
+    return filepath.Join(home, ".codectl", "provider.json"), nil
 }
 
-// Load reads the catalog from ~/.codectl/provider.yaml.
+//
+
+// Load reads the catalog from ~/.codectl/provider.json.
 // If the file does not exist, returns defaultCatalog and no error.
 func Load() (Catalog, error) {
-	p, err := path()
-	if err != nil {
-		return defaultCatalog, err
-	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return defaultCatalog, nil
-		}
-		return defaultCatalog, err
-	}
-	var cfg Catalog
-	if err := yaml.Unmarshal(b, &cfg); err != nil {
-		return defaultCatalog, err
-	}
-	// normalize
-	cfg.Models = normalizeList(cfg.Models)
-	cfg.MCP = normalizeList(cfg.MCP)
-	// if lists empty, fallback to default for that section
-	if len(cfg.Models) == 0 {
-		cfg.Models = append([]string(nil), defaultCatalog.Models...)
-	}
-	if len(cfg.MCP) == 0 {
-		cfg.MCP = append([]string(nil), defaultCatalog.MCP...)
-	}
-	return cfg, nil
+    p, err := pathJSON()
+    if err != nil {
+        return defaultCatalog, err
+    }
+    b, err := os.ReadFile(p)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return defaultCatalog, nil
+        }
+        return defaultCatalog, err
+    }
+    var cfg Catalog
+    if err := json.Unmarshal(b, &cfg); err != nil {
+        return defaultCatalog, err
+    }
+    cfg = normalizeCatalog(cfg)
+    if len(cfg.Models) == 0 {
+        cfg.Models = append([]string(nil), defaultCatalog.Models...)
+    }
+    if len(cfg.MCP) == 0 {
+        cfg.MCP = append([]string(nil), defaultCatalog.MCP...)
+    }
+    return cfg, nil
+}
+
+func normalizeCatalog(cfg Catalog) Catalog {
+    cfg.Models = normalizeList(cfg.Models)
+    cfg.MCP = normalizeList(cfg.MCP)
+    return cfg
 }
 
 func normalizeList(in []string) []string {
@@ -85,14 +92,33 @@ func normalizeList(in []string) []string {
 	return out
 }
 
+// Save writes the catalog to ~/.codectl/provider.json, creating parent dirs as needed.
+func Save(c Catalog) error {
+    // normalize and sort
+    c = normalizeCatalog(c)
+
+    p, err := pathJSON()
+    if err != nil {
+        return err
+    }
+    if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+        return err
+    }
+    b, err := json.MarshalIndent(c, "", "  ")
+    if err != nil {
+        return err
+    }
+    return os.WriteFile(p, b, 0o644)
+}
+
 // Models returns the remote models list.
 func Models() []string {
-	c, _ := Load()
-	return c.Models
+    c, _ := Load()
+    return c.Models
 }
 
 // MCPServers returns the remote MCP servers list.
 func MCPServers() []string {
-	c, _ := Load()
-	return c.MCP
+    c, _ := Load()
+    return c.MCP
 }

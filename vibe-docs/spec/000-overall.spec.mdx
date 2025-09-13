@@ -77,11 +77,11 @@ lastUpdated: {auto}
 - `codectl model remove <model>`：移除模型。
     - 示例：`codectl model remove kimi-k2-0905-preview`
 - `codectl model ls`：列出当前已添加/可用的本地模型配置。
-- `codectl model ls-remote`：列出远端可用的模型清单（默认从 `~/.codectl/provider.yaml` 读取；若缺失则使用内置清单）。
+- `codectl model ls-remote`：列出远端可用的模型清单（默认从 `~/.codectl/provider.json` 读取；若缺失则使用内置清单）。
 - `codectl mcp add <server>`：添加 MCP 服务端（示例：`codectl mcp add figma-developer-mcp`）。
 - `codectl mcp remove <server>`：移除 MCP 服务端（示例：`codectl mcp remove figma-developer-mcp`）。
 - `codectl mcp ls`：列出当前已配置的 MCP 服务端。
-- `codectl mcp ls-remote`：列出远端可用的 MCP 服务端清单（默认从 `~/.codectl/provider.yaml` 读取；若缺失则使用内置清单）。
+- `codectl mcp ls-remote`：列出远端可用的 MCP 服务端清单（默认从 `~/.codectl/provider.json` 读取；若缺失则使用内置清单）。
 - `codectl update`：自更新（占位）。
 - `codectl version`：打印 codectl 版本（纯数字）。
 - `codectl config`：打印配置目录（占位，可扩展）。
@@ -181,7 +181,7 @@ lastUpdated: {auto}
 - 0.1 原型：TUI 框架与基础交互。
 - 0.2 健康检查：检测工具安装/版本、API Key/代理连通性与修复建议（逐步完善）。
 - 0.3 配置向导：写入/更新环境变量；创建与切换配置档（profiles）。
-- 0.4 生态集成：输出统一配置（如 `~/.config/codectl/config.yaml`），提供编辑器/终端集成脚本。
+- 0.4 生态集成：输出统一配置（如 `~/.config/codectl/config.json`），提供编辑器/终端集成脚本。
 - 0.5 可扩展提供商：更多 LLM/企业代理/私有化场景。
 
 ## 16. 开放问题
