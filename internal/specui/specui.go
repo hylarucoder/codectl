@@ -61,6 +61,8 @@ type model struct {
 	statusMsg string
 	errMsg    string
 	now       time.Time
+	// rendering options
+	fastMode bool
 }
 
 func initialModel() model {
@@ -130,7 +132,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recalcViewports()
 			// async re-render for new width
 			if m.selected != nil {
-				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
+				return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 			}
 		}
 		return m, nil
@@ -161,7 +163,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// async render
 					m.mdVP.SetContent("渲染中…")
 					// return a command to kick off rendering
-					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
+					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 					m.statusMsg = "已进入详情视图。按 Esc 返回"
 				}
 				return m, nil
@@ -181,7 +183,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// reload md (async)
 				if m.selected != nil {
 					m.mdVP.SetContent("渲染中…")
-					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width)
+					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+				}
+				return m, nil
+			case "f":
+				// toggle fast mode and re-render
+				m.fastMode = !m.fastMode
+				if m.selected != nil {
+					m.mdVP.SetContent("渲染中…")
+					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
 				}
 				return m, nil
 			}
@@ -346,13 +356,19 @@ type renderDoneMsg struct {
 	Err   string
 }
 
-func renderMarkdownCmd(path string, width int) tea.Cmd {
+const fastThresholdBytes = 256 * 1024 // 256KB
+
+func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 	return func() tea.Msg {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return renderDoneMsg{Path: path, Width: width, Err: err.Error()}
 		}
 		content := string(b)
+		fast := forceFast || len(b) >= fastThresholdBytes
+		if fast {
+			return renderDoneMsg{Path: path, Width: width, Out: stripFrontmatter(content)}
+		}
 		r, _ := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(width),
@@ -362,6 +378,28 @@ func renderMarkdownCmd(path string, width int) tea.Cmd {
 		}
 		return renderDoneMsg{Path: path, Width: width, Out: content}
 	}
+}
+
+// stripFrontmatter removes the first frontmatter block if present
+func stripFrontmatter(s string) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) == 0 {
+		return s
+	}
+	if strings.TrimRight(lines[0], "\r") != "---" {
+		return s
+	}
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r") == "---" {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return s
+	}
+	return strings.Join(lines[end+1:], "\n")
 }
 
 func (m *model) refreshTableRows() {
@@ -477,6 +515,13 @@ func (m model) renderWorkbar() string {
 	}
 	// right segments
 	right := []string{}
+	if m.page == pageDetail {
+		if m.fastMode {
+			right = append(right, "快速:开")
+		} else {
+			right = append(right, "快速:关")
+		}
+	}
 	if !m.now.IsZero() {
 		right = append(right, m.now.Format("15:04:05"))
 	} else {
