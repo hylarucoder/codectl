@@ -198,7 +198,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					it := m.items[idx]
 					m.selected = &it
 					m.page = pageDetail
-					m.ti.Focus()
+					// default focus to terminal
+					m.ti.Blur()
+					m.termFocus = true
 					// layout first so content isn't lost when creating viewports
 					m.recalcViewports()
 					// async render
