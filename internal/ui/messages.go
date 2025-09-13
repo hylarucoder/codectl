@@ -1,27 +1,28 @@
 package ui
 
 import (
-    "time"
+	"time"
 
-    "codectl/internal/system"
-    "codectl/internal/tools"
+	"codectl/internal/system"
+	"codectl/internal/tools"
 )
 
 // Bubble Tea messages
 type versionMsg struct {
-    id     tools.ToolID
-    result tools.CheckResult
+	id     tools.ToolID
+	result tools.CheckResult
 }
 
 // Upgrade support messages
 type upgradeProgressMsg struct {
-    id   tools.ToolID
-    note string
+	id   tools.ToolID
+	note string
 }
 
 // generic notifications and quit
 type noticeMsg string
 type quitMsg struct{}
+
 // start upgrade flow
 type startUpgradeMsg struct{}
 

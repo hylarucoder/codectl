@@ -1,34 +1,33 @@
 package cli
 
 import (
-    "fmt"
+	"fmt"
 
-    "github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 
-    store "codectl/internal/mcp"
+	store "codectl/internal/mcp"
 )
 
 func init() {
-    mcpCmd.AddCommand(mcpLsCmd)
+	mcpCmd.AddCommand(mcpLsCmd)
 }
 
 var mcpLsCmd = &cobra.Command{
-    Use:   "ls",
-    Short: "列出已配置的 MCP 服务端",
-    Long:  "打印当前本地配置的 MCP 服务端清单。",
-    RunE: func(cmd *cobra.Command, args []string) error {
-        list, err := store.Load()
-        if err != nil {
-            return err
-        }
-        if len(list) == 0 {
-            fmt.Println("(空)")
-            return nil
-        }
-        for _, s := range list {
-            fmt.Println(s)
-        }
-        return nil
-    },
+	Use:   "ls",
+	Short: "列出已配置的 MCP 服务端",
+	Long:  "打印当前本地配置的 MCP 服务端清单。",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		list, err := store.Load()
+		if err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			fmt.Println("(空)")
+			return nil
+		}
+		for _, s := range list {
+			fmt.Println(s)
+		}
+		return nil
+	},
 }
-
