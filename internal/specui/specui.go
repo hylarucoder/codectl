@@ -428,7 +428,18 @@ func (m model) View() string {
 		}
 		// top: split left (file manager) and right (markdown)
 		left := leftBox.Render(m.fileTable.View())
-		right := rightBox.Render(m.mdVP.View())
+		// right: header with filename + markdown viewport
+		var fname string
+		if m.selected != nil {
+			fname = relFrom(m.root, m.selected.Path)
+		} else {
+			fname = "(未选择文件)"
+		}
+		rightInner := lipgloss.JoinVertical(lipgloss.Left,
+			headerStyle.Render(" "+fname+" "),
+			m.mdVP.View(),
+		)
+		right := rightBox.Render(rightInner)
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
 		bottom := inputBox.Render(m.ti.View()) + "\n" + m.renderWorkbar()
@@ -447,7 +458,8 @@ var (
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color("63")).
 			Padding(0, 1)
-	dimStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("250"))
+	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 )
 
 func (m *model) recalcViewports() {
@@ -482,7 +494,11 @@ func (m *model) recalcViewports() {
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
 	// left (file list) uses table height directly; right is markdown viewport
+	// right also reserves 1 line for filename header inside the box
 	mdW, mdH := rw-4, topH-2
+	if mdH > 1 {
+		mdH--
+	}
 	lgW, lgH := 0, 0
 	if mdW < 10 {
 		mdW = lw
