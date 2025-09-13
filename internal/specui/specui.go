@@ -74,6 +74,15 @@ type model struct {
 	termScr    *cellbuf.Screen
 	termWr     *cellbuf.ScreenWriter
 	termFocus  bool
+	termDirty  bool
+	// markdown cache: path -> width -> entry
+	mdCache map[string]map[int]mdEntry
+}
+
+type mdEntry struct {
+	out     string
+	modUnix int64
+	size    int64
 }
 
 func initialModel() model {
@@ -112,12 +121,13 @@ func initialModel() model {
 	ti.CharLimit = 4096
 
 	m := model{
-		cwd:   wd,
-		root:  root,
-		page:  pageSelect,
-		table: t,
-		ti:    ti,
-		logs:  make([]string, 0, 64),
+		cwd:     wd,
+		root:    root,
+		page:    pageSelect,
+		table:   t,
+		ti:      ti,
+		logs:    make([]string, 0, 64),
+		mdCache: make(map[string]map[int]mdEntry),
 	}
 	// preload items
 	m.items = m.loadSpecItems()
@@ -203,17 +213,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.termFocus = true
 					// layout first so content isn't lost when creating viewports
 					m.recalcViewports()
-					// async render
-					m.mdVP.SetContent("渲染中…")
+					// async render (use cache when possible)
 					m.statusMsg = "已进入详情视图。按 Esc 返回"
 					// default enable terminal mode and start PTY
 					m.termMode = true
 					cols, rows := m.termSize()
-					// return a batch of commands: render markdown and start PTY
-					return m, tea.Batch(
-						renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode),
-						startPTYCmd(m.cwd, cols, rows),
-					)
+					// check cache before rendering
+					var cmds []tea.Cmd
+					if m.selected != nil {
+						p := m.selected.Path
+						w := m.mdVP.Width
+						if cW, ok := m.mdCache[p]; ok {
+							if ce, ok2 := cW[w]; ok2 {
+								// verify file unchanged
+								if fi, err := os.Stat(p); err == nil && fi.ModTime().Unix() == ce.modUnix && fi.Size() == ce.size {
+									m.mdVP.SetContent(ce.out)
+								} else {
+									m.mdVP.SetContent("渲染中…")
+									cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
+								}
+							} else {
+								m.mdVP.SetContent("渲染中…")
+								cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
+							}
+						} else {
+							m.mdVP.SetContent("渲染中…")
+							cmds = append(cmds, renderMarkdownCmd(p, w, m.fastMode))
+						}
+					}
+					cmds = append(cmds, startPTYCmd(m.cwd, cols, rows))
+					return m, tea.Batch(cmds...)
 				}
 				return m, nil
 			}
@@ -327,16 +356,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.termScr = scr
 		m.termWr = wr
 		// kick off first read
-		return m, readPTYOnceCmd(m.pty)
+		return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
 	case ptyChunkMsg:
 		if m.termWr != nil && len(msg.Data) > 0 {
 			_, _ = m.termWr.Write(msg.Data)
 			// render screen into viewport
-			m.logVP.SetContent(cellbuf.Render(m.termScr))
+			m.termDirty = true
 		}
 		// schedule next read while PTY exists
 		if m.pty != nil {
 			return m, readPTYOnceCmd(m.pty)
+		}
+		return m, nil
+	case termRenderTickMsg:
+		if m.termMode && m.pty != nil {
+			if m.termDirty && m.termScr != nil {
+				m.logVP.SetContent(cellbuf.Render(m.termScr))
+				m.termDirty = false
+			}
+			// continue ticking
+			return m, termTickCmd()
 		}
 		return m, nil
 	case termDoneMsg:
@@ -363,6 +402,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mdVP.SetContent(fmt.Sprintf("读取/渲染失败：%s", msg.Err))
 			} else {
 				m.mdVP.SetContent(msg.Out)
+				// cache rendered content
+				if _, ok := m.mdCache[msg.Path]; !ok {
+					m.mdCache[msg.Path] = make(map[int]mdEntry)
+				}
+				m.mdCache[msg.Path][msg.Width] = mdEntry{out: msg.Out, modUnix: msg.ModUnix, size: msg.Size}
 			}
 		}
 		return m, nil
@@ -506,33 +550,42 @@ func (m *model) buildRenderer() {
 
 // Background render command and message
 type renderDoneMsg struct {
-	Path  string
-	Width int
-	Out   string
-	Err   string
+	Path    string
+	Width   int
+	Out     string
+	Err     string
+	ModUnix int64
+	Size    int64
 }
 
-const fastThresholdBytes = 256 * 1024 // 256KB
+const fastThresholdBytes = 64 * 1024 // 64KB (aggressive for snappier UI)
 
 func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 	return func() tea.Msg {
+		fi, statErr := os.Stat(path)
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return renderDoneMsg{Path: path, Width: width, Err: err.Error()}
 		}
 		content := string(b)
+		var modUnix int64
+		var size int64
+		if statErr == nil && fi != nil {
+			modUnix = fi.ModTime().Unix()
+			size = fi.Size()
+		}
 		fast := forceFast || len(b) >= fastThresholdBytes
 		if fast {
-			return renderDoneMsg{Path: path, Width: width, Out: stripFrontmatter(content)}
+			return renderDoneMsg{Path: path, Width: width, Out: stripFrontmatter(content), ModUnix: modUnix, Size: size}
 		}
 		r, _ := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(width),
 		)
 		if out, err := r.Render(content); err == nil {
-			return renderDoneMsg{Path: path, Width: width, Out: out}
+			return renderDoneMsg{Path: path, Width: width, Out: out, ModUnix: modUnix, Size: size}
 		}
-		return renderDoneMsg{Path: path, Width: width, Out: content}
+		return renderDoneMsg{Path: path, Width: width, Out: content, ModUnix: modUnix, Size: size}
 	}
 }
 
@@ -855,9 +908,15 @@ func (m model) renderWorkbar() string {
 
 // periodic tick for clock updates
 type tickMsg time.Time
+type termRenderTickMsg struct{}
 
 func tickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// render tick for terminal pane (throttled ~30fps)
+func termTickCmd() tea.Cmd {
+	return tea.Tick(33*time.Millisecond, func(time.Time) tea.Msg { return termRenderTickMsg{} })
 }
 
 // Render a segmented status bar with lipgloss backgrounds.
