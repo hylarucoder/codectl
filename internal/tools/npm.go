@@ -57,3 +57,11 @@ func NpmUpgradeLatest(ctx context.Context, pkg string) error {
     return nil
 }
 
+// NpmUninstallGlobal uninstalls a globally installed npm package.
+func NpmUninstallGlobal(ctx context.Context, pkg string) error {
+    _, err := runCmd(ctx, "npm", "uninstall", "-g", pkg)
+    if err != nil && !strings.Contains(err.Error(), "not found") {
+        return err
+    }
+    return nil
+}

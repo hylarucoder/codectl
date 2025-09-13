@@ -22,6 +22,8 @@ type upgradeProgressMsg struct {
 // generic notifications and quit
 type noticeMsg string
 type quitMsg struct{}
+// start upgrade flow
+type startUpgradeMsg struct{}
 
 // periodic tick for status bar time
 type tickMsg time.Time

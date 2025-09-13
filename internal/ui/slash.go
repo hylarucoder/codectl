@@ -33,6 +33,7 @@ var slashCmds = []SlashCmd{
     {Name: "/cost", Desc: "Show total cost and duration"},
     {Name: "/doctor", Desc: "Diagnose and verify installation"},
     {Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
+    {Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
     {Name: "/status", Desc: "Show current status for tools"},
     {Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
 }
@@ -122,7 +123,7 @@ func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
         b.WriteString("│\n")
         // bottom border and hint
         b.WriteString("╰" + strings.Repeat("─", inner) + "╯\n")
-        b.WriteString("  ↑/↓ 选择 · Enter 执行 · Esc 关闭\n")
+        b.WriteString("  ↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 关闭\n")
         return b.String()
     }
     for i, c := range cmds {
@@ -151,7 +152,7 @@ func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
     // bottom border
     b.WriteString("╰" + strings.Repeat("─", inner) + "╯\n")
     // hint line
-    b.WriteString("  ↑/↓ 选择 · Enter 执行 · Esc 关闭\n")
+    b.WriteString("  ↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 关闭\n")
     return b.String()
 }
 
@@ -218,6 +219,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
             summary := strings.Join(parts, " · ")
             return noticeMsg(summary)
         }
+    case "/upgrade", "/update":
+        // Kick off the same upgrade flow as pressing 'u'
+        return func() tea.Msg { return startUpgradeMsg{} }
     case "/init":
         return func() tea.Msg {
             ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

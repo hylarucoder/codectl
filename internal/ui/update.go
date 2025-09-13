@@ -72,12 +72,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                         }
                     }
                     return m, nil
-                case "down", "tab":
+                case "down":
                     if len(m.slashFiltered) > 0 {
                         m.slashIndex++
                         if m.slashIndex >= len(m.slashFiltered) {
                             m.slashIndex = 0
                         }
+                    }
+                    return m, nil
+                case "tab":
+                    // Autocomplete to the selected slash command
+                    if len(m.slashFiltered) > 0 {
+                        sel := m.slashFiltered[m.slashIndex].Name
+                        v := m.ti.Value()
+                        // replace the first token with the selected command name
+                        if sp := strings.IndexAny(v, " \t"); sp >= 0 {
+                            // keep existing suffix (including leading space)
+                            v = sel + v[sp:]
+                        } else {
+                            // add a space to allow typing args
+                            v = sel + " "
+                        }
+                        m.ti.SetValue(v)
                     }
                     return m, nil
                 }
@@ -176,6 +192,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case noticeMsg:
         m.notice = string(msg)
         return m, nil
+    case startUpgradeMsg:
+        if m.upgrading {
+            return m, nil
+        }
+        m.upgrading = true
+        // transient hint for upgrade mode
+        m.hintText = "操作: q/Ctrl+C 退出"
+        m.hintUntil = time.Now().Add(6 * time.Second)
+        m.upgradeNotes = make(map[tools.ToolID]string, len(tools.Tools))
+        total := 0
+        for _, t := range tools.Tools {
+            if t.Package != "" {
+                total++
+                m.upgradeNotes[t.ID] = "升级中…"
+            }
+        }
+        m.upgradeTotal = total
+        m.upgradeDone = 0
+        return m, upgradeAllCmd()
     case quitMsg:
         m.quitting = true
         return m, tea.Quit

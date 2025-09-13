@@ -1,0 +1,174 @@
+# codectl — 产品与技术规格（草案）
+
+> 目的：为 codectl 提供统一、可迭代的产品与技术规格，便于对齐目标、约束与实现细节，并指导后续开发、测试与文档。
+
+## 1. 概述
+- 定位：面向开发者的一站式 Code Agent 配置助手。
+- 价值：统一安装/检测/升级主流代码智能体 CLI；集中管理 API Key 与代理；提供可视化 TUI 与脚本友好的 CLI。
+- 核心能力：
+  - TUI 总览：展示各工具安装状态、版本、是否可升级；快捷键与斜杠命令操作。
+  - CLI 子命令：`add`、`remove`、`update`、`upgrade`、`version`、`config`、`spec`。
+  - 诊断与升级：检测全局安装版本与 npm registry 最新版本；一键升级。
+
+## 2. 目标与非目标
+- 目标
+  - 简化 Codex / Claude Code / Gemini CLI 的安装、检测、升级流程。
+  - 提供 JSON 机器可读的环境规格导出，便于脚本集成。
+  - 提供一致的交互体验（TUI + CLI），降低上手成本。
+- 非目标
+  - 本项目不直接提供模型推理能力。
+  - 不替代第三方 CLI 的自身功能与配置项解释；以其官方为准。
+  - 初期不引入复杂的后端服务或持久化存储（除未来配置档 Roadmap）。
+
+## 3. 用户与场景
+- 用户画像：开发者、DevOps、团队内工具维护者。
+- 典型场景
+  - 新机器初始化：一键安装并检测工具与网络环境。
+  - 多项目切换：快速切换默认提供商与参数（Roadmap）。
+  - 持续健康检查：定期核验安装状态、版本差异，并升级。
+
+## 4. 术语
+- 工具（Tool）：Codex、Claude Code、Gemini CLI 等第三方命令行工具。
+- 检测（Check）：判断是否安装、当前版本、来源及 npm 最新版本。
+- 升级（Upgrade）：使用 `npm install -g <pkg>@latest` 升级到最新版。
+
+## 5. 系统范围与边界
+- 输入：终端交互（TUI/CLI）、环境变量（API Key、代理）、系统 PATH、npm registry。
+- 输出：终端渲染（TUI）、标准输出（CLI 文本/JSON）。
+- 外部依赖：`node`/`npm`、网络访问 npm registry、`git`（获取仓库信息）。
+
+## 6. 功能规格
+### 6.1 支持工具
+- Codex：`@openai/codex`，二进制：`codex`、`openai-codex`
+- Claude Code：`@anthropic-ai/claude-code`，二进制：`claude`、`claude-code`
+- Gemini CLI：`@google/gemini-cli`，二进制：`gemini`
+
+### 6.2 TUI（默认入口）
+- 框架：Bubble Tea
+- 面板：列出每个工具的安装状态、当前版本、最新版本、检测来源（binary/npm）。
+- 快捷键
+  - `r` 重新检测
+  - `u` 升级到最新（仅对有 npm 包名的工具）
+  - `q`/`Ctrl+C` 退出
+  - `/` 聚焦输入，`Esc` 取消输入
+- 斜杠命令（已实现）
+  - `/doctor`：触发重新检测并提示
+  - `/status`：汇总当前状态一行文案
+  - `/upgrade`（`/update`）：批量升级
+  - `/exit`（`/quit`）：退出
+  - `/init`：在当前 Git 仓库根创建 `vibe-docs/AGENTS.md`
+- 状态栏：当前时间、`codectl` 版本、Git 分支/提交（在仓库内时显示）。
+
+### 6.3 CLI 子命令
+- `codectl`：启动 TUI。
+- `codectl add [tool]`：安装工具（默认 all；支持 `codex|claude|gemini`）。
+- `codectl remove [tool]`：卸载工具（默认 all）。
+- `codectl update [tool]`：升级工具（默认 all）。
+- `codectl upgrade`：自更新（占位）。
+- `codectl version`：打印 codectl 版本（纯数字）。
+- `codectl config`：打印配置目录（占位，可扩展）。
+- `codectl spec [--pretty=true]`：输出环境规格 JSON。
+
+### 6.4 健康检查逻辑
+- 安装检测：
+  - 先通过候选二进制（`Binaries`）尝试执行 `--version/-v/version` 获取版本。
+  - 若失败且配置了 `Package`，通过 `npm ls -g --depth=0 <pkg> --json` 解析已装版本。
+- 最新版本：`npm view <pkg> version --json` 获取。
+- 结果合并：返回 `Installed`、`Version`、`Latest`、`Source`（binary/npm）、`Error`。
+
+### 6.5 升级策略
+- 触发：TUI `u` 或 `/upgrade`；CLI `update`/`add`。
+- 执行：`npm install -g <pkg>@latest --no-fund --no-audit`。
+- 判断：如当前版本低于 registry，或未知但已安装，则尝试升级；结束后重新检测回显新版本或 `latest`。
+
+## 7. 数据与接口
+### 7.1 环境变量
+- API Key（按需）：`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY`
+- 代理（可选）：`HTTP_PROXY`、`HTTPS_PROXY`
+
+### 7.2 JSON 规格（`codectl spec` 输出）
+- 结构
+  - `codectlVersion`: string
+  - `os`: string (GOOS)
+  - `arch`: string (GOARCH)
+  - `tools`: 数组
+    - `id`: `Codex|Claude|Gemini`
+    - `name`: string（展示名）
+    - `installed`: bool
+    - `version`: string（可选）
+    - `latest`: string（可选）
+    - `source`: string（binary/npm，可选）
+    - `error`: string（可选）
+
+示例（pretty=true）：
+
+```json
+{
+  "codectlVersion": "0.2.0",
+  "os": "darwin",
+  "arch": "arm64",
+  "tools": [
+    {"id": "Codex",  "name": "Codex (@openai/codex)", "installed": true,  "version": "1.2.3", "latest": "1.2.4", "source": "binary"},
+    {"id": "Claude", "name": "Claude Code (@anthropic-ai/claude-code)", "installed": false, "error": "not found"},
+    {"id": "Gemini", "name": "Gemini CLI (@google/gemini-cli)", "installed": true,  "version": "0.9.1", "latest": "0.9.1", "source": "npm"}
+  ]
+}
+```
+
+## 8. 架构设计
+- 语言与框架：Go 1.20+；CLI 使用 Cobra；TUI 使用 Bubble Tea（含 `bubbles/textinput`、`lipgloss`、`x/ansi`）。
+- 模块划分（`internal/`）
+  - `app`：应用启动封装（TUI 入口）。
+  - `cli`：子命令实现（`root.go`/`spec.go`/...）。
+  - `tools`：工具注册、检测与升级（npm 交互、版本比较）。
+  - `system`：系统/仓库信息（Git root/分支/提交）。
+  - `ui`：TUI 模型、渲染、消息、命令、斜杠命令处理。
+  - `version`：应用版本常量。
+- 进程模型：单进程 CLI；通过子进程调用 `npm`、`git`；TUI 内部基于消息驱动（tea.Cmd）并发执行检测与升级。
+
+## 9. 错误处理与可用性
+- 失败容忍：npm/二进制检测失败不影响其他工具；集中展示错误提示。
+- 超时控制：升级与部分操作设置超时（如 5min）。
+- 可重试：`r` 快速重试检测。
+- 反馈：TUI 底部通知栏展示进展/结果；CLI 返回非零码时输出错误。
+
+## 10. 性能与兼容性
+- 性能：并行检测各工具版本；升级任务批量并行但应避免过度并发（当前按工具数量批量）。
+- 兼容性：支持主流 OS/Arch（以 Go 构建能力为准）；依赖系统已安装 `node`/`npm` 与可访问 npm registry。
+
+## 11. 安全与隐私
+- 不收集或上传遥测。
+- 不打印或持久化用户的 API Key 值；仅指导配置。
+- 遵守第三方 CLI 的使用条款。
+
+## 12. 国际化与可访问性
+- 文字：当前以中文界面为主，英文常量可后续抽取做 i18n。
+- 终端可访问性：保持键盘为主的操作路径，信息密度可控，提示清晰。
+
+## 13. 测试与验证
+- 单元测试建议
+  - `tools` 层：版本解析、比较、命令行输出解析的纯函数测试（mock 外部命令）。
+  - `ui` 层：消息处理与状态迁移测试（无需真实渲染）。
+- 集成测试建议
+  - 在本地/CI 使用假 npm registry 或对真实命令加速与隔离（可配置跳过）。
+
+## 14. 构建与发布
+- 构建：`go build -o codectl`；本地运行 `go run .`。
+- 版本：`internal/version` 提供 `AppVersion`；`codectl version` 输出数字以便脚本处理。
+- 自更新：`codectl upgrade` 为占位，后续对接 Release 资源。
+
+## 15. Roadmap（与 README 对齐）
+- 0.1 原型：TUI 框架与基础交互。
+- 0.2 健康检查：检测工具安装/版本、API Key/代理连通性与修复建议（逐步完善）。
+- 0.3 配置向导：写入/更新环境变量；创建与切换配置档（profiles）。
+- 0.4 生态集成：输出统一配置（如 `~/.config/codectl/config.yaml`），提供编辑器/终端集成脚本。
+- 0.5 可扩展提供商：更多 LLM/企业代理/私有化场景。
+
+## 16. 开放问题
+- Windows 平台下 npm 全局安装位置与 PATH 差异处理策略。
+- 代理/网络异常时 npm 查询的降级与重试策略。
+- 配置档格式与合并优先级（环境变量、用户文件、项目内文件）。
+- 未来是否需要插件化工具注册表与运行期扩展能力。
+
+---
+最后更新：{auto}
