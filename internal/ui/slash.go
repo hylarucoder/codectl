@@ -14,8 +14,9 @@ import (
     xansi "github.com/charmbracelet/x/ansi"
     fuzzy "github.com/sahilm/fuzzy"
 
-	"codectl/internal/system"
-	"codectl/internal/tools"
+    "codectl/internal/system"
+    "codectl/internal/tools"
+    "codectl/internal/provider"
 )
 
 type SlashCmd struct {
@@ -38,10 +39,11 @@ var slashCmds = []SlashCmd{
     {Name: "/remove", Desc: "Uninstall supported CLIs"},
     {Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
     {Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
+    {Name: "/sync", Desc: "Sync provider.json with built-in defaults"},
     {Name: "/status", Desc: "Show current status for tools"},
     {Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
     {Name: "/task", Desc: "Create vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx"},
-	{Name: "/spec", Desc: "Generate spec via Codex and save to vibe-docs/spec"},
+    {Name: "/spec", Desc: "Generate spec via Codex and save to vibe-docs/spec"},
 }
 
 func (m *model) refreshSlash() {
@@ -331,9 +333,21 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			summary := strings.Join(parts, " · ")
 			return noticeMsg(summary)
 		}
-	case "/upgrade", "/update":
-		// Kick off the same upgrade flow as pressing 'u'
-		return func() tea.Msg { return startUpgradeMsg{} }
+    case "/upgrade", "/update":
+        // Kick off the same upgrade flow as pressing 'u'
+        return func() tea.Msg { return startUpgradeMsg{} }
+    case "/sync":
+        return func() tea.Msg {
+            cfg, err := provider.Load()
+            if err != nil {
+                return noticeMsg(fmt.Sprintf("同步失败：%v", err))
+            }
+            if err := provider.Save(cfg); err != nil {
+                return noticeMsg(fmt.Sprintf("写入失败：%v", err))
+            }
+            p, _ := provider.Path()
+            return noticeMsg(fmt.Sprintf("已同步 provider.json：%s (models=%d, mcp=%d)", p, len(cfg.Models), len(cfg.MCP)))
+        }
 	case "/init":
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

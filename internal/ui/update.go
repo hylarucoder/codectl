@@ -31,6 +31,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
+		// Global tab navigation when input is not focused
+		if !m.ti.Focused() {
+			s := msg.String()
+			switch s {
+			case "left", "h":
+				if m.activeTab == tabInstall {
+					m.activeTab = tabClean
+				} else {
+					m.activeTab--
+				}
+				return m, nil
+			case "right", "l", "tab":
+				if m.activeTab == tabClean {
+					m.activeTab = tabInstall
+				} else {
+					m.activeTab++
+				}
+				return m, nil
+			case "shift+tab", "backtab":
+				if m.activeTab == tabInstall {
+					m.activeTab = tabClean
+				} else {
+					m.activeTab--
+				}
+				return m, nil
+			case "enter":
+				return m, m.performActiveTab()
+			case "1":
+				m.activeTab = tabInstall
+				return m, nil
+			case "2":
+				m.activeTab = tabUpdate
+				return m, nil
+			case "3":
+				m.activeTab = tabSync
+				return m, nil
+			case "4":
+				m.activeTab = tabClean
+				return m, nil
+			}
+		}
 		// When input is not focused, start typing on any rune/space to auto-focus
 		if !m.ti.Focused() {
 			switch msg.Type {
@@ -219,4 +260,20 @@ func gitInfoCmd(dir string) tea.Cmd {
 		gi, _ := system.GetGitInfo(ctx, dir)
 		return gitInfoMsg{info: gi}
 	}
+}
+
+// performActiveTab triggers the action for the current tab.
+func (m model) performActiveTab() tea.Cmd {
+    switch m.activeTab {
+    case tabInstall:
+        return m.execSlashCmd("/add", "all")
+    case tabUpdate:
+        return m.execSlashCmd("/upgrade", "")
+    case tabSync:
+        return m.execSlashCmd("/sync", "")
+    case tabClean:
+        return m.execSlashCmd("/remove", "all")
+    default:
+        return nil
+    }
 }

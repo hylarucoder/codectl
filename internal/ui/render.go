@@ -1,12 +1,77 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
 
-	"github.com/charmbracelet/lipgloss"
-	xansi "github.com/charmbracelet/x/ansi"
+    "github.com/charmbracelet/lipgloss"
+    xansi "github.com/charmbracelet/x/ansi"
 )
+
+// Tabs
+type tabKind int
+
+const (
+    tabInstall tabKind = iota
+    tabUpdate
+    tabSync
+    tabClean
+)
+
+func (t tabKind) String() string {
+    switch t {
+    case tabInstall:
+        return "install"
+    case tabUpdate:
+        return "update"
+    case tabSync:
+        return "sync"
+    case tabClean:
+        return "clean"
+    default:
+        return "?"
+    }
+}
+
+func renderTabs(width int, active tabKind) string {
+    w := width
+    if w <= 0 {
+        w = 100
+    }
+    inner := w
+
+    base := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236")).Padding(0, 1)
+    hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("86")).Padding(0, 1)
+
+    items := []struct {
+        k   tabKind
+        txt string
+    }{
+        {tabInstall, "install"},
+        {tabUpdate, "update"},
+        {tabSync, "sync"},
+        {tabClean, "clean"},
+    }
+
+    parts := make([]string, 0, len(items))
+    for _, it := range items {
+        if it.k == active {
+            parts = append(parts, hl.Render(it.txt))
+        } else {
+            parts = append(parts, base.Render(it.txt))
+        }
+    }
+    line := strings.Join(parts, " ")
+    // Trim if necessary
+    if xansi.StringWidth(line) > inner {
+        // Naively drop from the right until it fits
+        for len(parts) > 0 && xansi.StringWidth(strings.Join(parts, " ")) > inner {
+            parts = parts[:len(parts)-1]
+        }
+        line = strings.Join(parts, " ")
+    }
+    return line + "\n"
+}
 
 // renderBanner creates a welcome banner and can include additional lines inside the box.
 func renderBanner(cwd string, extra []string) string {

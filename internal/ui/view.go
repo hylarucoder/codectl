@@ -19,6 +19,9 @@ func (m model) View() string {
 	b := &strings.Builder{}
 	if m.upgrading {
 		b.WriteString(renderBanner(m.cwd, nil))
+		// tabs under banner
+		b.WriteString("\n")
+		b.WriteString(renderTabs(m.width, m.activeTab))
 		fmt.Fprintf(b, "\n  codectl — 正在升级\n\n")
 		// show per-tool upgrade status for tools with npm package
 		for _, t := range tools.Tools {
@@ -97,6 +100,9 @@ func (m model) View() string {
 	}
 
 	b.WriteString(renderBanner(m.cwd, status))
+	// tabs under banner
+	b.WriteString("\n")
+	b.WriteString(renderTabs(m.width, m.activeTab))
 
 	// no "上次更新" display per requirement
 	// message line just above input: prefer notice (if any), else lastInput
