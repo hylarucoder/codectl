@@ -11,7 +11,7 @@ Note：Coding Agent 迭代非常迅速，codectl 可能会被更强大的模型�
 ## 为什么是 Spec‑Driven Development
 
 - 规范优先：功能从 `vibe-docs/spec/` 中的规范开始定义，再落地到 CLI/TUI 与实现代码，保证讨论与实现对齐。
-- 可验证：通过 `codectl spec` 输出环境与工具状态的机器可读的 mdx。
+- 可验证：通过 `codectl spec` 打开交互式界面，浏览规范与记录对话日志。
 - 易协作：配合 `vibe-docs/AGENTS.md`，为人类与 AI Coding Agent 提供一致的协作约束与上下文。
 
 ## 功能总览
@@ -74,9 +74,9 @@ codectl update                  # 未来将从 GitHub Releases 自更新
 codectl version                 # 打印 codectl 版本（仅数字，便于脚本）
 codectl config                  # 打印配置目录（通常为用户配置目录）
 
-# 导出环境规格（JSON）
-codectl spec                    # 输出包含 OS/Arch、工具安装/版本/最新信息的 JSON
-codectl spec --pretty=false     # 紧凑输出（默认 pretty=true）
+# 规范（Spec）
+codectl spec                    # 打开交互式 Spec UI（选择表格 + 左侧 Markdown + 右侧日志 + 底部输入）
+codectl spec ui                 # 同上（显式子命令）
 codectl spec new "<说明>"       # 调用 codex exec 生成规范草案，保存到 vibe-docs/spec
 
 # 校验文档 frontmatter（MDX）
@@ -144,7 +144,7 @@ codectl cli ls-remote           # 列出受支持工具的远端最新版本（n
 
 - 规范位置：`vibe-docs/spec/`（例如：`vibe-docs/spec/overall.md`）。建议先提 PR 更新规范，再按规范开发。
 - Agent 协作：`vibe-docs/AGENTS.md` 用于指导 AI Coding Agent 在仓库中的约束、风格与运行方式。
-- 机器可读快照：`codectl spec` 输出环境与工具状态（JSON），便于在 CI 中按规范校验。
+- 规范浏览 UI：`codectl spec` 打开交互式界面浏览/记录规范上下文。
 - 贡献建议：任何新功能或破坏性变更，先在规范中给出目标、边界、接口与验证方式。
 
 ## Roadmap
