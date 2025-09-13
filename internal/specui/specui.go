@@ -59,10 +59,13 @@ type model struct {
 	// legacy spec list (unused when using file manager)
 	items []specItem
 	table table.Model
-	// file manager state
+	// file explorer (tree) state
+	fmRoot    string
 	fmCwd     string
-	fileItems []fileEntry
 	fileTable table.Model
+	treeRoot  *treeNode
+	expanded  map[string]bool
+	visible   []treeRow
 	selected  *specItem
 	mdVP      viewport.Model
 	logVP     viewport.Model
@@ -100,6 +103,19 @@ type fileEntry struct {
 	Name  string
 	Path  string
 	IsDir bool
+}
+
+type treeNode struct {
+	Name     string
+	Path     string
+	IsDir    bool
+	Parent   *treeNode
+	Children []*treeNode
+}
+
+type treeRow struct {
+	Node *treeNode
+	Text string
 }
 
 type focusArea int
@@ -149,13 +165,16 @@ func initialModel() model {
 		logs:      make([]string, 0, 64),
 		mdCache:   make(map[string]map[int]mdEntry),
 	}
-	// file manager cwd
-	m.fmCwd = filepath.Join(root, "vibe-docs")
+	// file manager root/cwd
+	m.fmRoot = filepath.Join(root, "vibe-docs")
+	m.fmCwd = m.fmRoot
 	// initial focus on files
 	m.focus = focusFiles
 	m.fileTable.Focus()
 	m.ti.Blur()
-	m.reloadFileTable()
+	m.expanded = map[string]bool{}
+	m.expanded[m.fmRoot] = true
+	m.reloadTree()
 	return m
 }
 
@@ -206,36 +225,63 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pageDetail:
 			switch msg.String() {
 			case "enter":
-				// open selection: dir -> cd; file -> render
-				if len(m.fileItems) == 0 {
+				// open selection: dir -> toggle expand; file -> render
+				if len(m.visible) == 0 {
 					return m, nil
 				}
 				idx := m.fileTable.Cursor()
-				if idx < 0 || idx >= len(m.fileItems) {
+				if idx < 0 || idx >= len(m.visible) {
 					return m, nil
 				}
-				fe := m.fileItems[idx]
-				if fe.IsDir {
-					// change directory (prevent leaving vibe-docs root)
-					m.fmCwd = fe.Path
-					m.reloadFileTable()
+				node := m.visible[idx].Node
+				if node.IsDir {
+					m.expanded[node.Path] = !m.expanded[node.Path]
+					m.reloadTree()
+					// keep cursor position (clamped by table)
+					if idx >= len(m.visible) {
+						idx = len(m.visible) - 1
+					}
+					m.fileTable.SetRows(m.visibleRows())
+					m.fileTable.SetCursor(idx)
 					return m, nil
 				}
 				// render file
-				it := specItem{Path: fe.Path, Title: filepath.Base(fe.Path)}
+				it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
 				m.selected = &it
 				m.ti.Reset()
 				m.ti.Blur()
 				m.recalcViewports()
 				m.statusMsg = "按 Esc 返回"
 				m.mdVP.SetContent("渲染中…")
-				return m, renderMarkdownCmd(fe.Path, m.mdVP.Width, m.fastMode)
+				return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
 			case "left", "backspace":
-				// go up if possible
-				root := filepath.Join(m.root, "vibe-docs")
-				if strings.TrimRight(m.fmCwd, string(filepath.Separator)) != strings.TrimRight(root, string(filepath.Separator)) {
-					m.fmCwd = filepath.Dir(m.fmCwd)
-					m.reloadFileTable()
+				// collapse dir or move to parent
+				if len(m.visible) == 0 {
+					return m, nil
+				}
+				idx := m.fileTable.Cursor()
+				if idx < 0 || idx >= len(m.visible) {
+					return m, nil
+				}
+				node := m.visible[idx].Node
+				if node.IsDir && m.expanded[node.Path] {
+					m.expanded[node.Path] = false
+					m.reloadTree()
+					m.fileTable.SetRows(m.visibleRows())
+					m.fileTable.SetCursor(idx)
+					return m, nil
+				}
+				if node.Parent != nil {
+					parent := node.Parent
+					// ensure parent visible
+					m.expanded[parent.Path] = true
+					m.reloadTree()
+					for i, r := range m.visible {
+						if r.Node == parent {
+							m.fileTable.SetCursor(i)
+							break
+						}
+					}
 				}
 				return m, nil
 			case "tab":
@@ -826,14 +872,18 @@ func relFrom(root, p string) string {
 }
 
 // reloadFileTable populates the file manager table for fmCwd.
-func (m *model) reloadFileTable() {
-	dir := m.fmCwd
-	st, err := os.Stat(dir)
-	if err != nil || !st.IsDir() {
-		m.fileItems = nil
-		m.fileTable.SetRows(nil)
-		return
+func (m *model) reloadTree() {
+	m.treeRoot = m.buildTree(m.fmRoot, nil)
+	m.visible = m.buildVisible()
+	m.fileTable.SetRows(m.visibleRows())
+}
+
+func (m *model) buildTree(dir string, parent *treeNode) *treeNode {
+	name := filepath.Base(dir)
+	if strings.TrimSpace(name) == "" {
+		name = dir
 	}
+	root := &treeNode{Name: name, Path: dir, IsDir: true, Parent: parent}
 	entries, _ := os.ReadDir(dir)
 	// sort: dirs first, then files, by name
 	sort.SliceStable(entries, func(i, j int) bool {
@@ -843,28 +893,63 @@ func (m *model) reloadFileTable() {
 		}
 		return strings.ToLower(entries[i].Name()) < strings.ToLower(entries[j].Name())
 	})
-	items := make([]fileEntry, 0, len(entries)+1)
-	rows := make([]table.Row, 0, len(entries)+1)
-	// up entry
-	root := filepath.Join(m.root, "vibe-docs")
-	if strings.TrimRight(dir, string(filepath.Separator)) != strings.TrimRight(root, string(filepath.Separator)) {
-		up := filepath.Dir(dir)
-		items = append(items, fileEntry{Name: "..", Path: up, IsDir: true})
-		rows = append(rows, table.Row{".."})
-	}
 	for _, e := range entries {
-		name := e.Name()
-		p := filepath.Join(dir, name)
-		isDir := e.IsDir()
-		disp := name
-		if isDir {
-			disp = name + "/"
+		n := &treeNode{
+			Name:   e.Name(),
+			Path:   filepath.Join(dir, e.Name()),
+			IsDir:  e.IsDir(),
+			Parent: root,
 		}
-		items = append(items, fileEntry{Name: name, Path: p, IsDir: isDir})
-		rows = append(rows, table.Row{disp})
+		root.Children = append(root.Children, n)
 	}
-	m.fileItems = items
-	m.fileTable.SetRows(rows)
+	return root
+}
+
+func (m *model) buildVisible() []treeRow {
+	out := make([]treeRow, 0, 64)
+	// root line
+	out = append(out, treeRow{Node: m.treeRoot, Text: m.treeRoot.Name + "/"})
+	var walk func(parent *treeNode, prefixKinds []bool)
+	walk = func(parent *treeNode, prefixKinds []bool) {
+		if !m.expanded[parent.Path] {
+			return
+		}
+		for i, ch := range parent.Children {
+			last := i == len(parent.Children)-1
+			var b strings.Builder
+			for _, cont := range prefixKinds {
+				if cont {
+					b.WriteString("│ ")
+				} else {
+					b.WriteString("  ")
+				}
+			}
+			if last {
+				b.WriteString("└╴ ")
+			} else {
+				b.WriteString("├╴ ")
+			}
+			name := ch.Name
+			if ch.IsDir {
+				name += "/"
+			}
+			out = append(out, treeRow{Node: ch, Text: b.String() + name})
+			if ch.IsDir {
+				next := append(append([]bool(nil), prefixKinds...), !last)
+				walk(ch, next)
+			}
+		}
+	}
+	walk(m.treeRoot, nil)
+	return out
+}
+
+func (m *model) visibleRows() []table.Row {
+	rows := make([]table.Row, 0, len(m.visible))
+	for _, r := range m.visible {
+		rows = append(rows, table.Row{r.Text})
+	}
+	return rows
 }
 
 // setFocus updates UI focus across panes and applies component focus state.
