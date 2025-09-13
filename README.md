@@ -118,11 +118,12 @@ codectl demo chat               # 运行聊天消息示例（Viewport + Textarea
 codectl demo markdown [file]    # 使用 Glamour 渲染 Markdown（可选文件路径）
 
 # 开发快捷方式（仅 main.go）
-# 通过环境变量在 `go run main.go` 下直接启动 Chat Demo：
+# 直接运行常用初始化命令：
 #
-#   CODECTL_DEMO=chat go run main.go
+#   go run main.go config model
 #
-# 不设置时 `go run main.go` 将按默认行为启动 CLI。
+# 如需运行 Demo：
+#   go run main.go demo autocomplete
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。

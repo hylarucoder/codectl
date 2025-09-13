@@ -76,6 +76,8 @@ type model struct {
 	termVT     *vt.Emulator
 	termFocus  bool
 	termDirty  bool
+	// track OSC sequence state across PTY read chunks
+	oscPending bool
 	// markdown cache: path -> width -> entry
 	mdCache map[string]map[int]mdEntry
 }
@@ -366,7 +368,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(readPTYOnceCmd(m.pty), termTickCmd())
 	case ptyChunkMsg:
 		if m.termVT != nil && len(msg.Data) > 0 {
-			_, _ = m.termVT.Write(msg.Data)
+			data := stripOSCBytesState(msg.Data, &m.oscPending)
+			if len(data) > 0 {
+				_, _ = m.termVT.Write(data)
+			}
 			// mark dirty to re-render into viewport
 			m.termDirty = true
 		}
@@ -1172,4 +1177,40 @@ func stripOSC(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// stripOSCBytesState removes OSC sequences from byte stream while tracking state
+// across chunks. If an OSC sequence starts in this chunk and doesn't end here,
+// oscPending will be set to true so that subsequent chunks continue skipping
+// until a BEL (0x07) or ST (ESC \) is found.
+func stripOSCBytesState(b []byte, oscPending *bool) []byte {
+	out := make([]byte, 0, len(b))
+	i := 0
+	for i < len(b) {
+		if *oscPending {
+			// Skip until BEL or ST (ESC \)
+			for i < len(b) {
+				if b[i] == 0x07 { // BEL
+					i++
+					*oscPending = false
+					break
+				}
+				if b[i] == '\\' && i > 0 && b[i-1] == 0x1b { // ESC \
+					i++
+					*oscPending = false
+					break
+				}
+				i++
+			}
+			continue
+		}
+		if b[i] == 0x1b && i+1 < len(b) && b[i+1] == ']' { // OSC start
+			*oscPending = true
+			i += 2
+			continue
+		}
+		out = append(out, b[i])
+		i++
+	}
+	return out
 }
