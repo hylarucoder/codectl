@@ -73,6 +73,7 @@ type model struct {
 	pty        xpty.Pty
 	termScr    *cellbuf.Screen
 	termWr     *cellbuf.ScreenWriter
+	termFocus  bool
 }
 
 func initialModel() model {
@@ -156,7 +157,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
-		// global quit
+		// when terminal has focus, forward most keys to PTY
+		if m.page == pageDetail && m.termMode && m.termFocus && m.pty != nil {
+			// Special-case focus management and program quit
+			switch msg.String() {
+			case "esc":
+				// exit terminal focus back to input
+				m.termFocus = false
+				return m, nil
+			case "ctrl+c":
+				// send SIGINT to PTY instead of quitting app
+				return m, writePTYCmd(m.pty, []byte{0x03})
+			case "ctrl+l":
+				return m, writePTYCmd(m.pty, []byte{0x0c})
+			case "ctrl+z":
+				return m, writePTYCmd(m.pty, []byte{0x1a})
+			}
+			if data := keyToPTYBytes(msg); len(data) > 0 {
+				return m, writePTYCmd(m.pty, data)
+			}
+			return m, nil
+		}
+		// global quit when not in terminal focus
 		if key := msg.String(); key == "ctrl+c" || key == "q" {
 			return m, tea.Quit
 		}
@@ -192,6 +214,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case pageDetail:
 			switch msg.String() {
+			case "tab":
+				if m.termMode && m.pty != nil {
+					m.termFocus = !m.termFocus
+					if m.termFocus {
+						m.ti.Blur()
+					} else {
+						m.ti.Focus()
+					}
+					return m, nil
+				}
 			case "esc":
 				// back to list
 				m.page = pageSelect
@@ -588,6 +620,44 @@ func writePTYCmd(p xpty.Pty, data []byte) tea.Cmd {
 	}
 }
 
+// keyToPTYBytes maps Bubble Tea KeyMsg into terminal byte sequences
+func keyToPTYBytes(k tea.KeyMsg) []byte {
+	// runes typing
+	if k.Type == tea.KeyRunes && len(k.Runes) > 0 {
+		return []byte(string(k.Runes))
+	}
+	switch k.Type {
+	case tea.KeySpace:
+		return []byte(" ")
+	case tea.KeyEnter:
+		return []byte("\r")
+	case tea.KeyBackspace:
+		return []byte{0x7f}
+	}
+	// named keys
+	switch k.String() {
+	case "up":
+		return []byte("\x1b[A")
+	case "down":
+		return []byte("\x1b[B")
+	case "right":
+		return []byte("\x1b[C")
+	case "left":
+		return []byte("\x1b[D")
+	case "home":
+		return []byte("\x1b[H")
+	case "end":
+		return []byte("\x1b[F")
+	case "pgup":
+		return []byte("\x1b[5~")
+	case "pgdown":
+		return []byte("\x1b[6~")
+	case "tab":
+		return []byte("\t")
+	}
+	return nil
+}
+
 // stripFrontmatter removes the first frontmatter block if present
 func stripFrontmatter(s string) string {
 	lines := strings.Split(s, "\n")
@@ -718,13 +788,20 @@ func (m model) renderWorkbar() string {
 			left = append(left, "No file selected")
 		}
 		if m.termMode {
-			left = append(left, "↵ 执行")
+			if m.termFocus {
+				left = append(left, "键入→终端")
+			} else {
+				left = append(left, "↵ 执行")
+			}
 		} else {
 			left = append(left, "↵ 记录")
 		}
 		left = append(left, "r 载入")
 		left = append(left, "f 快速")
 		left = append(left, "t 终端")
+		if m.termMode {
+			left = append(left, "Tab 焦点")
+		}
 		left = append(left, "Esc 返回")
 	}
 	// right segments
@@ -739,6 +816,13 @@ func (m model) renderWorkbar() string {
 			right = append(right, "终端:开")
 		} else {
 			right = append(right, "终端:关")
+		}
+		if m.termMode {
+			if m.termFocus {
+				right = append(right, "焦点:终端")
+			} else {
+				right = append(right, "焦点:输入")
+			}
 		}
 	}
 	if !m.now.IsZero() {
