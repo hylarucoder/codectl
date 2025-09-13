@@ -253,17 +253,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pageDetail:
 			switch msg.String() {
 			case "tab":
-				if m.termMode && m.pty != nil {
-					m.termFocus = !m.termFocus
-					if m.termFocus {
-						m.ti.Blur()
-					} else {
-						m.ti.Focus()
-					}
-					// re-render to show/hide terminal cursor overlay
-					m.termDirty = true
-					return m, nil
-				}
+				// terminal focus toggle disabled (no terminal binding)
+				return m, nil
 			case "esc":
 				// back to list
 				m.page = pageSelect
@@ -296,21 +287,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "t":
-				// toggle terminal mode (right pane behavior)
-				m.termMode = !m.termMode
-				if m.termMode && m.pty == nil {
-					// start persistent PTY session
-					cols, rows := m.termSize()
-					return m, startPTYCmd(m.cwd, cols, rows)
-				}
-				if !m.termMode && m.pty != nil {
-					_ = m.pty.Close()
-					m.pty = nil
-					if m.termVT != nil {
-						_ = m.termVT.Close()
-						m.termVT = nil
-					}
-				}
+				// terminal toggle disabled (no terminal binding)
 				return m, nil
 			}
 			// input handling
@@ -886,21 +863,10 @@ func (m model) renderWorkbar() string {
 		} else {
 			left = append(left, "No file selected")
 		}
-		if m.termMode {
-			if m.termFocus {
-				left = append(left, "键入→终端")
-			} else {
-				left = append(left, "↵ 执行")
-			}
-		} else {
-			left = append(left, "↵ 记录")
-		}
+		left = append(left, "↵ 记录")
 		left = append(left, "r 载入")
 		left = append(left, "f 快速")
-		left = append(left, "t 终端")
-		if m.termMode {
-			left = append(left, "Tab 焦点")
-		}
+		// terminal binding removed: no 't'/'Tab' hints
 		left = append(left, "Esc 返回")
 	}
 	// right segments
@@ -910,18 +876,6 @@ func (m model) renderWorkbar() string {
 			right = append(right, "快速:开")
 		} else {
 			right = append(right, "快速:关")
-		}
-		if m.termMode {
-			right = append(right, "终端:开")
-		} else {
-			right = append(right, "终端:关")
-		}
-		if m.termMode {
-			if m.termFocus {
-				right = append(right, "焦点:终端")
-			} else {
-				right = append(right, "焦点:输入")
-			}
 		}
 	}
 	if !m.now.IsZero() {
