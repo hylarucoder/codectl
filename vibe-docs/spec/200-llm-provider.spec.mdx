@@ -1,0 +1,28 @@
+---
+title: LLM Provider — 管理与配置
+specVersion: 0.1.0
+status: draft
+lastUpdated: {auto}
+---
+
+# LLM Provider — 管理与配置（草案）
+
+## 1. 概述
+定义 codectl 对 LLM 提供商（OpenAI/Anthropic/Google 等）的统一管理接口与环境变量约定。
+
+## 2. 目标与非目标
+- 目标：标准化 Key/代理配置、模型清单读取、基础检测与提示。
+- 非目标：不对提供商的 API/Quota/计费做抽象；以官方为准。
+
+## 3. 环境变量与配置
+- `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY`
+- 代理：`HTTP_PROXY`、`HTTPS_PROXY`
+
+## 4. 命令与行为（占位）
+- `codectl model ls`、`ls-remote`、`add`、`remove`。
+
+## 5. Conformance（用例占位）
+- 用例将补充于 `vibe-docs/conformance/provider-*.mdx`。
+
+## 6. 变更记录
+- 0.1.0：初稿。

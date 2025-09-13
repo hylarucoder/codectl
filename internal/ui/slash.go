@@ -4,6 +4,7 @@ import (
     "context"
     "fmt"
     "os"
+    "os/exec"
     "path/filepath"
     "strings"
     "time"
@@ -36,6 +37,8 @@ var slashCmds = []SlashCmd{
     {Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
     {Name: "/status", Desc: "Show current status for tools"},
     {Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
+    {Name: "/task", Desc: "Create vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx"},
+    {Name: "/spec", Desc: "Generate spec via Codex and save to vibe-docs/spec"},
 }
 
 func (m *model) refreshSlash() {
@@ -250,6 +253,101 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
             }
             return noticeMsg(fmt.Sprintf("已创建：%s", path))
         }
+    case "/task":
+        return func() tea.Msg {
+            ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+            defer cancel()
+            gi, _ := system.GetGitInfo(ctx, m.cwd)
+            if !gi.InRepo {
+                return noticeMsg("当前目录不在 Git 仓库内，未进行任何操作")
+            }
+            root, err := system.GitRoot(ctx, m.cwd)
+            if err != nil || strings.TrimSpace(root) == "" {
+                root = m.cwd
+            }
+            dir := filepath.Join(root, "vibe-docs", "task")
+            if err := os.MkdirAll(dir, 0o755); err != nil {
+                return noticeMsg(fmt.Sprintf("创建目录失败：%v", err))
+            }
+            // Use args as task title when provided; build slug
+            title := strings.TrimSpace(args)
+            if title == "" {
+                title = "未命名任务"
+            }
+            now := time.Now()
+            ts := now.Format("060102-150405") // YYMMDD-HHMMSS
+            slug := slugify(title)
+            filename := fmt.Sprintf("%s-%s.task.mdx", ts, slug)
+            path := filepath.Join(dir, filename)
+            content := defaultTaskMD(title, now)
+            if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
+                return noticeMsg(fmt.Sprintf("写入失败：%v", writeErr))
+            }
+            return noticeMsg(fmt.Sprintf("已创建：%s", path))
+        }
+    case "/spec":
+        // Generate a spec via Codex CLI and save under vibe-docs/spec
+        prompt := strings.TrimSpace(args)
+        if prompt == "" {
+            return func() tea.Msg { return noticeMsg("用法：/spec <说明>") }
+        }
+        return tea.Batch(
+            func() tea.Msg { return noticeMsg("正在生成 spec（codex exec）…") },
+            func() tea.Msg {
+                // locate codex binary
+                bin := ""
+                for _, cand := range []string{"codex", "openai-codex"} {
+                    if p, err := exec.LookPath(cand); err == nil && p != "" {
+                        bin = p
+                        break
+                    }
+                }
+                if bin == "" {
+                    return noticeMsg("未找到 codex CLI（尝试安装 @openai/codex）")
+                }
+                // resolve repo root
+                ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+                root, err := system.GitRoot(ctx, m.cwd)
+                cancel()
+                if err != nil || strings.TrimSpace(root) == "" {
+                    root = m.cwd
+                }
+                outDir := filepath.Join(root, "vibe-docs", "spec")
+                if err := os.MkdirAll(outDir, 0o755); err != nil {
+                    return noticeMsg(fmt.Sprintf("创建目录失败：%v", err))
+                }
+                // Run codex exec with robust fallback: arg then stdin
+                body, runErr := runCodex(bin, prompt, 120*time.Second)
+                if runErr != nil && body == "" {
+                    return noticeMsg(fmt.Sprintf("codex exec 失败：%v", runErr))
+                }
+                content := body
+                // wrap with minimal frontmatter when missing
+                trimmed := strings.TrimSpace(body)
+                if !strings.HasPrefix(trimmed, "---") {
+                    title := prompt
+                    fm := "---\n" +
+                        "title: " + title + "\n" +
+                        "specVersion: 0.1.0\n" +
+                        "status: draft\n" +
+                        "lastUpdated: {auto}\n" +
+                        "---\n\n"
+                    content = fm + body
+                }
+                // filename
+                ts := time.Now().Format("060102-150405")
+                name := fmt.Sprintf("draft-%s-%s.spec.mdx", ts, slugify(prompt))
+                outPath := filepath.Join(outDir, name)
+                if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
+                    return noticeMsg(fmt.Sprintf("写入失败：%v", err))
+                }
+                // also persist raw output for debugging if there was a non-fatal error
+                if runErr != nil {
+                    _ = os.WriteFile(outPath+".raw.txt", []byte(body), 0o644)
+                }
+                return noticeMsg(fmt.Sprintf("已生成：%s（使用 %s）", outPath, filepath.Base(bin)))
+            },
+        )
     default:
         // not implemented
         return func() tea.Msg {
@@ -299,4 +397,103 @@ This file guides AI coding agents working in this repository.
 
 You can create more AGENTS.md files in subdirectories for overrides.
 `
+}
+
+// defaultTaskMDX returns a minimal template for 000-a-task.mdx
+func defaultTaskMD(title string, t time.Time) string {
+    if title == "" {
+        title = "未命名任务"
+    }
+    // ISO timestamp for createdAt
+    created := t.Format(time.RFC3339)
+    return "---\n" +
+        "title: " + title + "\n" +
+        "createdAt: " + created + "\n" +
+        "lastUpdated: {auto}\n" +
+        "---\n\n" +
+        "# 任务说明（草案）\n\n" +
+        "> 由 codectl /task 生成。可使用 '/task <标题>' 指定标题。\n\n" +
+        "## 背景\n- \n\n" +
+        "## 目标\n- \n\n" +
+        "## 非目标\n- \n\n" +
+        "## 验收标准\n- \n\n" +
+        "## 实现要点\n- \n\n" +
+        "## 风险与依赖\n- \n\n" +
+        "## 参考链接\n- \n"
+}
+
+// slugify converts a title to a safe kebab-case slug
+func slugify(s string) string {
+    s = strings.ToLower(strings.TrimSpace(s))
+    // replace non-alphanumeric (including spaces) with '-'
+    b := make([]rune, 0, len(s))
+    lastDash := false
+    for _, r := range s {
+        if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+            b = append(b, r)
+            lastDash = false
+            continue
+        }
+        // keep CJK as-is to allow readable slugs; otherwise dash
+        if r >= 0x4E00 && r <= 0x9FFF {
+            b = append(b, r)
+            lastDash = false
+            continue
+        }
+        if !lastDash {
+            b = append(b, '-')
+            lastDash = true
+        }
+    }
+    // trim leading/trailing '-'
+    res := strings.Trim(btoa(b), "-")
+    if res == "" {
+        res = "task"
+    }
+    return res
+}
+
+func btoa(r []rune) string { return string(r) }
+
+// runCodex tries to execute `codex exec` with prompt as argument and
+// falls back to providing the prompt via STDIN. Returns output body and error.
+func runCodex(bin string, prompt string, timeout time.Duration) (string, error) {
+    // try with argument
+    {
+        ctx, cancel := context.WithTimeout(context.Background(), timeout)
+        cmd := exec.CommandContext(ctx, bin, "exec", prompt)
+        cmd.Env = append(os.Environ(), "NO_COLOR=1")
+        out, err := cmd.CombinedOutput()
+        cancel()
+        if err == nil && len(out) > 0 {
+            return string(out), nil
+        }
+        // keep err/out for fallback decision
+        if ctx.Err() == context.DeadlineExceeded {
+            return "", ctx.Err()
+        }
+        if len(out) > 0 {
+            // if we have output even with error, return it to persist
+            return string(out), err
+        }
+    }
+    // fallback: provide prompt via STDIN
+    {
+        ctx, cancel := context.WithTimeout(context.Background(), timeout)
+        cmd := exec.CommandContext(ctx, bin, "exec")
+        cmd.Env = append(os.Environ(), "NO_COLOR=1")
+        cmd.Stdin = strings.NewReader(prompt)
+        out, err := cmd.CombinedOutput()
+        cancel()
+        if err == nil && len(out) > 0 {
+            return string(out), nil
+        }
+        if len(out) > 0 {
+            return string(out), err
+        }
+        if err != nil {
+            return "", err
+        }
+        return string(out), nil
+    }
 }

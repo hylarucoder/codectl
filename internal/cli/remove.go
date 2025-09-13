@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-    rootCmd.AddCommand(removeCmd)
+    cliCmd.AddCommand(removeCmd)
 }
 
 var removeCmd = &cobra.Command{
@@ -61,4 +61,3 @@ var removeCmd = &cobra.Command{
         return nil
     },
 }
-

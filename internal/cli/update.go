@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-    rootCmd.AddCommand(updateCmd)
+    cliCmd.AddCommand(updateCmd)
 }
 
 var updateCmd = &cobra.Command{

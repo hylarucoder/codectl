@@ -138,36 +138,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         }
         // otherwise, handle global shortcuts
         switch msg.String() {
-        case "ctrl+c", "q":
+        case "ctrl+c":
             m.quitting = true
             return m, tea.Quit
-        case "r":
-            // re-run checks
-            if !m.upgrading {
-                m.results = make(map[tools.ToolID]tools.CheckResult, len(tools.Tools))
-                m.checking = true
-                return m, checkAllCmd()
-            }
-        case "u":
-            // upgrade tools to latest using npm and then re-check
-            if m.upgrading {
-                return m, nil
-            }
-            m.upgrading = true
-            // transient hint for upgrade mode
-            m.hintText = "操作: q/Ctrl+C 退出"
-            m.hintUntil = time.Now().Add(6 * time.Second)
-            m.upgradeNotes = make(map[tools.ToolID]string, len(tools.Tools))
-            total := 0
-            for _, t := range tools.Tools {
-                if t.Package != "" {
-                    total++
-                    m.upgradeNotes[t.ID] = "升级中…"
-                }
-            }
-            m.upgradeTotal = total
-            m.upgradeDone = 0
-            return m, upgradeAllCmd()
         }
     case versionMsg:
         m.results[msg.id] = msg.result
@@ -198,7 +171,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         }
         m.upgrading = true
         // transient hint for upgrade mode
-        m.hintText = "操作: q/Ctrl+C 退出"
+        m.hintText = "操作: Ctrl+C 退出"
         m.hintUntil = time.Now().Add(6 * time.Second)
         m.upgradeNotes = make(map[tools.ToolID]string, len(tools.Tools))
         total := 0

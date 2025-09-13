@@ -62,8 +62,8 @@ func initialModel() model {
     // initialize slash suggestions (hidden at start)
     m.refreshSlash()
 
-    // transient operations hint in status bar
-    m.hintText = "操作: r 重新检测 · u 升级到最新 · q/Ctrl+C 退出 · / 聚焦输入 · Esc 取消输入"
+    // transient operations hint in status bar (no 'r'/'u' shortcuts)
+    m.hintText = "操作: Ctrl+C 退出 · / 命令模式 · Esc 取消输入"
     m.hintUntil = time.Now().Add(6 * time.Second)
     return m
 }

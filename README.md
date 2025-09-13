@@ -57,28 +57,54 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 ## 用法
 
 ```bash
-# 添加/安装（默认 all，可选 codex|claude|gemini）
-codectl add                # 安装全部
-codectl add claude         # 仅安装 Claude Code
+# CLI 工具管理（默认 all，可选 codex|claude|gemini）
+codectl cli add                 # 安装全部
+codectl cli add claude          # 仅安装 Claude Code
 
-# 卸载（默认 all）
-codectl remove             # 卸载全部
-codectl remove claude      # 仅卸载 Claude Code
+codectl cli remove              # 卸载全部
+codectl cli remove claude       # 仅卸载 Claude Code
 
-# 升级到最新（默认 all）
-codectl update             # 升级全部
-codectl update gemini      # 仅升级 Gemini CLI
+codectl cli update              # 升级全部
+codectl cli update gemini       # 仅升级 Gemini CLI
 
 # 自更新（占位，暂未实现自动下载）
-codectl upgrade            # 未来将从 GitHub Releases 自更新
+codectl update                  # 未来将从 GitHub Releases 自更新
  
 # 查看版本与配置位置
-codectl version            # 打印 codectl 版本（仅数字，便于脚本）
-codectl config             # 打印配置目录（通常为用户配置目录）
+codectl version                 # 打印 codectl 版本（仅数字，便于脚本）
+codectl config                  # 打印配置目录（通常为用户配置目录）
 
 # 导出环境规格（JSON）
-codectl spec               # 输出包含 OS/Arch、工具安装/版本/最新信息的 JSON
-codectl spec --pretty=false # 紧凑输出（默认 pretty=true）
+codectl spec                    # 输出包含 OS/Arch、工具安装/版本/最新信息的 JSON
+codectl spec --pretty=false     # 紧凑输出（默认 pretty=true）
+codectl spec new "<说明>"       # 调用 codex exec 生成规范草案，保存到 vibe-docs/spec
+
+# 校验文档 frontmatter（MDX）
+codectl check                   # 检测 vibe-docs/spec 下的 .spec.mdx 的 frontmatter（至少含 title）
+codectl check --json            # 以 JSON 报告形式输出
+
+# 模型管理（新增）
+codectl model ls                # 列出本地模型清单
+codectl model ls-remote         # 列出远端可用模型清单（占位）
+codectl model add kimi-k2-0905-preview kimi-k2-0711-preview
+codectl model remove kimi-k2-0905-preview
+
+# 工具与 MCP 清单
+codectl cli ls                  # 列出受支持工具状态（已装/版本/可升级）
+codectl mcp ls                  # 列出本地 MCP 服务端
+codectl mcp ls-remote           # 列出远端可用 MCP 服务端（占位）
+codectl cli ls-remote           # 列出受支持工具的远端最新版本（npm）
+
+# 远端清单来源（provider.yaml）
+# ls-remote 命令会优先从 ~/.codectl/provider.yaml 读取：
+#
+# models:
+#   - kimi-k2-0905-preview
+#   - kimi-k2-0711-preview
+# mcp:
+#   - figma-developer-mcp
+#
+# 如该文件不存在，将使用内置的内建清单作为回退。
 ```
 
 支持的工具参数（可多选）：`all`、`codex`、`claude`、`gemini`。
@@ -93,12 +119,14 @@ codectl spec --pretty=false # 紧凑输出（默认 pretty=true）
 ## TUI 使用说明
 
 - 启动后顶部展示当前目录与状态面板，列出每个工具：是否已安装、当前版本、npm 最新版本，以及检测来源。
-- 当存在可更新版本时，最新版本将高亮提示；按 `u` 或使用 `/upgrade` 即可批量升级并自动回查结果。
+- 当存在可更新版本时，最新版本将高亮提示；使用 `/upgrade` 可批量升级并自动回查结果。
 - 输入框支持斜杠命令：输入 `/` 进入命令模式，使用 ↑/↓ 选择、`Tab` 补全、`Enter` 执行、`Esc` 退出。
 - 已实现命令：
     - `/doctor`：重新检测并给出状态提示
     - `/status`：在界面底部汇总一行当前状态
     - `/upgrade`（`/update`）：批量升级受支持的 CLI
+    - `/task`：生成 `vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`（可用 `/task <标题>` 指定标题，自动生成 slug 与时间戳）
+    - `/spec`：调用 `codex exec <说明>` 生成规范草案，保存到 `vibe-docs/spec/draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
     - `/exit`（`/quit`）：退出界面
     - `/init`：在当前 Git 仓库根目录创建 `vibe-docs/AGENTS.md` 模板文件
 

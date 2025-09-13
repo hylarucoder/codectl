@@ -1,0 +1,73 @@
+---
+title: Spec Management Spec
+specVersion: 0.1.0
+status: accepted
+lastUpdated: {auto}
+---
+
+# Spec — 管理与配置规范
+
+本规范定义 codectl 仓库内规范文档（spec）与任务文档（task）的结构、命名、Frontmatter 字段、状态流转、编号规则，以及校验与合并准入，确保“规范为唯一真源，机读可校验”。
+
+## 1. 目录与范围
+- 规范：`vibe-docs/spec/NNN-<slug>.spec.mdx`
+- 任务：`vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`（时间戳 + slug）
+- Schema：`vibe-docs/spec/schemas/`（JSON Schema 等）
+- Conformance：`vibe-docs/conformance/`（可执行用例）
+
+## 2. Frontmatter 合同
+- 必填（所有 .mdx）：
+  - `title: string`
+- 推荐（.spec.mdx）：
+  - `specVersion: semver`（规范版本，描述文档自身版本）
+  - `status: draft|proposal|accepted|deprecated|retired`
+  - `owners: string[]`、`reviewers: string[]`
+  - `since: string`、`deprecatedSince: string`、`breaking: boolean`
+- 任务文档（`vibe-docs/task/*.mdx`）推荐字段：
+  - `owner: string`、`due: YYYY-MM-DD`、`priority: P0|P1|P2`、`relatedSpec: string[]`、`acceptance: string[]`
+- 自动更新字段：
+  - `lastUpdated: {auto}` 可由工具在生成/更新时覆盖。
+
+注：当前 `codectl check` 强制 `title` 存在，并对 `.spec.mdx` 缺失 `specVersion` 发出“警告”。后续可按需要升级为“错误”。
+
+## 3. 命名与编号
+- 文件名：`NNN-<slug>.spec.mdx`，其中 `NNN` 为三位数字，`<slug>` 使用 kebab-case。
+- 保留号段（建议）：
+  - `000-099` 总览/治理
+  - `100-199` CLI
+  - `200-299` Provider
+  - `300-399` MCP
+  - `400-499` 规范治理
+- 约束：同目录内编号不得重复；`slug` 唯一且清晰表达主题。
+
+## 4. 状态流转
+`draft → proposal → accepted → deprecated → retired`
+- 准入：
+  - `proposal` 需完成问题背景与目标、基本接口/行为描述、至少 1 个 conformance 用例草案。
+  - `accepted` 需通过 owners 审批；破坏性变更必须提供迁移指引与过渡期。
+- 退场：
+  - `deprecated` 表示不再推荐使用；`retired` 表示移除或被替代（`supersedes|replaces` 关系）。
+
+## 5. 规范结构（每个 .spec.mdx 建议包含）
+- 概述与术语（采用 RFC2119 关键字）
+- 目标与非目标
+- 行为/接口：CLI 参数、退出码、数据模型、状态机/UX
+- 安全/隐私、国际化、兼容性与降级策略
+- Conformance：用例清单（输入、命令、预期输出/退出码）
+- 变更记录：版本、破坏性变更、迁移指引
+
+## 6. Conformance 与可追溯性
+- 追踪文件：`vibe-docs/spec/traceability.json`
+  - 结构建议：`{ requirements: [{ id, specRef, impl: [paths], tests: [paths] }] }`
+- 用例：`vibe-docs/conformance/<area>-<slug>-*.mdx`
+
+## 7. 校验与工具
+- 命令：`codectl check [--json]`
+  - 扫描 `vibe-docs/spec` 下的 `*.spec.mdx`
+  - 校验：frontmatter 起止分隔符、`title` 存在；缺失 `specVersion` 发出警告
+  - 退出码：有错误时非 0；支持 JSON 报告用于 CI
+- 建议：在预提交/CI 中运行 `codectl check`，阻止缺失 frontmatter 的文档进入主干。
+
+## 8. 破坏性变更与版本
+- 当 `breaking: true`：文档必须给出兼容窗口、迁移步骤与回滚方案。
+- `specVersion` 采用语义化版本；不兼容升级需在文档中标注并提供迁移指引。

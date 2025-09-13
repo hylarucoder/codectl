@@ -14,8 +14,8 @@ func init() {
 }
 
 var upgradeCmd = &cobra.Command{
-    Use:   "upgrade",
-    Short: "升级 codectl 自身（自更新）",
+    Use:   "update",
+    Short: "更新 codectl 自身（自更新）",
     Long:  "TODO：后续将连接 GitHub Releases，自动下载并替换二进制以完成自更新。",
     RunE: func(cmd *cobra.Command, args []string) error {
         fmt.Println("codectl 自更新（TODO）")
