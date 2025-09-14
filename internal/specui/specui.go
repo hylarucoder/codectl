@@ -143,14 +143,18 @@ func initialModel() model {
 		table.WithHeight(20),
 	)
 	ts := table.DefaultStyles()
-	ts.Header = ts.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(uistyle.Vitesse.Border).
-		BorderBottom(true).
-		Bold(false).
-		Foreground(uistyle.Vitesse.Secondary)
-	ts.Cell = ts.Cell.
-		Foreground(uistyle.Vitesse.Text)
+    ts.Header = ts.Header.
+        BorderStyle(lipgloss.NormalBorder()).
+        BorderForeground(uistyle.Vitesse.Border).
+        BorderBottom(true).
+        Bold(false).
+        Padding(0, 0).
+        Foreground(uistyle.Vitesse.Secondary).
+        Background(uistyle.Vitesse.Bg)
+    ts.Cell = ts.Cell.
+        Padding(0, 0).
+        Foreground(uistyle.Vitesse.Text).
+        Background(uistyle.Vitesse.Bg)
 
 	ts.Selected = ts.Selected.
 		Foreground(uistyle.Vitesse.OnAccent).
