@@ -118,8 +118,8 @@ type treeNode struct {
 }
 
 type treeRow struct {
-	Node *treeNode
-	Text string
+    Node *treeNode
+    Text string
 }
 
 type focusArea int
@@ -1084,8 +1084,70 @@ func stripFrontmatter(s string) string {
 // isMarkdown reports whether the given path looks like a Markdown document
 // that we can render on the right pane.
 func isMarkdown(path string) bool {
-	p := strings.ToLower(path)
-	return strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".mdx") || strings.HasSuffix(p, ".markdown")
+    p := strings.ToLower(path)
+    return strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".mdx") || strings.HasSuffix(p, ".markdown")
+}
+
+// nerdIcon returns a Nerd Font icon for a given file or directory name.
+// It uses a conservative subset of common glyphs to avoid width issues.
+func nerdIcon(name string, isDir bool, expanded bool) string {
+    // Choose icon codepoints from Nerd Font (v3) commonly available
+    // Folders
+    folderClosed := "" // nf-custom-folder
+    folderOpen := ""   // nf-custom-folder_open
+    // Files
+    md := ""      // nf-custom-markdown
+    gof := ""      // nf-custom-go
+    json := ""    // nf-custom-json
+    yml := ""     // generic config/gear
+    sh := ""      // nf-dev-terminal
+    js := ""      // nf-custom-js
+    ts := ""      // nf-custom-ts
+    py := ""      // nf-custom-python
+    html := ""    // nf-custom-html5
+    css := ""     // nf-custom-css3
+    img := ""     // nf-custom-image
+    lock := ""     // nf-fa-lock
+    txt := ""      // nf-fa-file
+
+    icon := txt
+    lower := strings.ToLower(name)
+    if isDir {
+        if expanded {
+            icon = folderOpen
+        } else {
+            icon = folderClosed
+        }
+    } else if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".mdx") || strings.HasSuffix(lower, ".markdown") {
+        icon = md
+    } else if strings.HasSuffix(lower, ".go") {
+        icon = gof
+    } else if strings.HasSuffix(lower, ".json") {
+        icon = json
+    } else if strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".toml") {
+        icon = yml
+    } else if strings.HasSuffix(lower, ".sh") || strings.HasSuffix(lower, ".bash") || strings.HasSuffix(lower, ".zsh") {
+        icon = sh
+    } else if strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".cjs") || strings.HasSuffix(lower, ".mjs") {
+        icon = js
+    } else if strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".tsx") {
+        icon = ts
+    } else if strings.HasSuffix(lower, ".py") {
+        icon = py
+    } else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
+        icon = html
+    } else if strings.HasSuffix(lower, ".css") || strings.HasSuffix(lower, ".scss") || strings.HasSuffix(lower, ".less") {
+        icon = css
+    } else if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") || strings.HasSuffix(lower, ".svg") || strings.HasSuffix(lower, ".ico") {
+        icon = img
+    } else if strings.HasSuffix(lower, ".lock") || strings.Contains(lower, "lock") {
+        icon = lock
+    }
+    // Subtle theming: folders use blue, files use secondary
+    if isDir {
+        return lipgloss.NewStyle().Foreground(uistyle.Vitesse.Blue).Render(icon)
+    }
+    return lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary).Render(icon)
 }
 
 // while preserving inner spacing and ANSI sequences.
@@ -1157,14 +1219,17 @@ func (m *model) buildTree(dir string, parent *treeNode) *treeNode {
 }
 
 func (m *model) buildVisible() []treeRow {
-	out := make([]treeRow, 0, 64)
-	// root line
-	out = append(out, treeRow{Node: m.treeRoot, Text: m.treeRoot.Name + "/"})
-	var walk func(parent *treeNode, prefixKinds []bool)
-	walk = func(parent *treeNode, prefixKinds []bool) {
-		if !m.expanded[parent.Path] {
-			return
-		}
+    out := make([]treeRow, 0, 64)
+    // root line
+    {
+        icon := nerdIcon(m.treeRoot.Name+"/", true, true)
+        out = append(out, treeRow{Node: m.treeRoot, Text: icon + " " + m.treeRoot.Name + "/"})
+    }
+    var walk func(parent *treeNode, prefixKinds []bool)
+    walk = func(parent *treeNode, prefixKinds []bool) {
+        if !m.expanded[parent.Path] {
+            return
+        }
 		for i, ch := range parent.Children {
 			last := i == len(parent.Children)-1
 			var b strings.Builder
@@ -1180,16 +1245,18 @@ func (m *model) buildVisible() []treeRow {
 			} else {
 				b.WriteString("├╴ ")
 			}
-			name := ch.Name
-			if ch.IsDir {
-				name += "/"
-			}
-			out = append(out, treeRow{Node: ch, Text: b.String() + name})
-			if ch.IsDir {
-				next := append(append([]bool(nil), prefixKinds...), !last)
-				walk(ch, next)
-			}
-		}
+            name := ch.Name
+            if ch.IsDir {
+                name += "/"
+            }
+            // Nerd Font icon based on filetype/dir status
+            icon := nerdIcon(name, ch.IsDir, m.expanded[ch.Path])
+            out = append(out, treeRow{Node: ch, Text: b.String() + icon + " " + name})
+            if ch.IsDir {
+                next := append(append([]bool(nil), prefixKinds...), !last)
+                walk(ch, next)
+            }
+        }
 	}
 	walk(m.treeRoot, nil)
 	return out
