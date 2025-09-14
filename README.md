@@ -75,17 +75,11 @@ codectl spec new "<说明>"       # 调用 codex exec 生成规范草案，保�
 codectl check                   # 检测 vibe-docs/spec 下的 .spec.mdx 的 frontmatter（至少含 title）
 codectl check --json            # 以 JSON 报告形式输出
 
-# 模型管理（新增）
-codectl model ls                # 列出本地模型清单
-codectl model ls-remote         # 列出远端可用模型清单（占位）
-codectl model add kimi-k2-0905-preview kimi-k2-0711-preview
-codectl model remove kimi-k2-0905-preview
+# 模型管理
+# 通过 TUI `codectl settings` 管理模型清单（CLI 暂无 model 子命令）
 
 # 工具与 MCP 清单
-# 已集成到 TUI 的状态面板中
-codectl mcp ls                  # 列出本地 MCP 服务端
-codectl mcp ls-remote           # 列出远端可用 MCP 服务端（占位）
-// 远端最新版本展示亦可通过 TUI 升级检查查看
+# 已集成到 TUI 的状态面板中（CLI 暂无 mcp 子命令）
 
 # 远端清单来源（provider.json, v2）
 # ls-remote 会优先从 ~/.codectl/provider.json 读取“providers 映射”并扁平化 models：

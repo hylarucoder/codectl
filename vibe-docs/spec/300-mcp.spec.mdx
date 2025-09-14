@@ -84,17 +84,12 @@ lastUpdated: {auto}
 
 ### 4.1 子命令
 
-- `codectl mcp list [--json]`
+- `codectl mcp list [--json]`（规划中）
   - MUST 列出合并后有效的 MCP 服务器，含 `id|name|enabled|status|transport|endpoint|autostart`。
   - `--json` 输出 MUST 符合 `ListOutput.schema`（后续补充）。
   - 退出码：0 成功；>0 读取/解析错误。
 
-- `codectl mcp add <manifest>`
-  - 从本地 JSON 文件或远端 URL 导入一个服务器定义。
-  - MUST 为导入的服务器生成唯一 `id`（或使用清单内提供的 id）。
-  - 冲突（同 id）：MUST 询问覆盖/新 id（非交互模式下默认失败并退出码=2）。
-
-- `codectl mcp remove <id>`：从当前作用域配置中移除（不影响其他层）。
+- `codectl mcp remove <id>`（规划中）：从当前作用域配置中移除（不影响其他层）。
 
 - `codectl mcp enable|disable <id>`：切换启用状态（就近写入作用域配置）。
 
@@ -102,15 +97,14 @@ lastUpdated: {auto}
   - 当 `transport=stdio` 且定义了 `start.kind=command|docker` 时，MUST 支持本地启动与停止。
   - MUST 在 `~/.local/state/codectl/mcp/<id>/` 写入 pid 与日志（平台等价目录）。
 
-- `codectl mcp doctor [<id>] [--fix]`
+- `codectl mcp doctor [<id>] [--fix]`（规划中）
   - MUST 执行以下检查并返回 JSON：
     - 二进制/运行时存在性（node/docker）
     - 端口/网络连通性（ws/sse/http）
     - 健康检查（见 5）
   - `--fix` 允许执行可安全修复项（例如安装缺失二进制的提示脚本）。
 
-- `codectl mcp export <id>`
-  - 导出单个服务器的独立 JSON manifest（便于分享/复用）。
+- `codectl mcp export <id>`（规划中）
 
 TUI MUST 新增 MCP 面板：展示列表、状态、快捷操作（回车展开、`s` 启停、`e` 启用/禁用、`r` 诊断）。
 
@@ -134,7 +128,7 @@ TUI MUST 新增 MCP 面板：展示列表、状态、快捷操作（回车展开
   - `${env:VAR}` 使用进程环境。
   - `${keychain:service/account}` 使用系统安全存储（macOS Keychain/Secret Service/Windows Credential Manager）。
   - `${file:~/.secrets/foo}` 仅指向本地文件路径（不建议）。
-- `codectl mcp add`/`enable` 等操作 MUST 不回显密钥内容。
+- `codectl mcp enable|disable` 等操作 MUST 不回显密钥内容。
 
 ## 7. 规范文件与机读接口
 

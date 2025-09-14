@@ -6,7 +6,7 @@ import "github.com/spf13/cobra"
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "管理 MCP 服务端",
-	Long:  "添加、移除与列出 MCP 服务端配置与远端清单。",
+	Long:  "MCP 管理命令入口（占位，当前无子命令）。",
 }
 
 func init() {

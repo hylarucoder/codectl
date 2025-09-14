@@ -88,8 +88,7 @@ lastUpdated: {auto}
   - `mcp.json`（独立的名称→配置映射，缺省时写入示例）
 - `codectl provider sync`：同步/规范化 `~/.codectl/provider.json`（v2）。
 - `codectl provider schema`：输出 `provider.json` 的 JSON Schema（用于校验/补全）。
-- `codectl model ls|ls-remote|add|remove`：管理本地模型与查看远端清单（远端来自 `provider.json(v2)` 扁平化）。
-- `codectl mcp ls|ls-remote|add|remove`：管理本地 MCP 服务端清单与占位远端清单。
+- 模型与 MCP 清单建议通过 TUI 管理：`codectl settings` 与主面板（CLI 暂无 `model|mcp` 子命令）。
 - `codectl update`：自更新（占位）。
 - `codectl version`：打印 codectl 版本（纯数字）。
 
