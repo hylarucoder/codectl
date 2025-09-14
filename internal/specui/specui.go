@@ -701,17 +701,23 @@ func (m *model) recalcViewports() {
 		topH = 3
 	}
 
-    // top split: left (file list) ~40% cols, right (markdown) rest
+    // top split: left (file list) fixed width, right (markdown) rest
     innerW := m.width - 2 // borders padding approx
     if innerW < 20 {
         innerW = m.width
     }
-    lw := innerW * 2 / 5 // 40%
-    if lw < 32 {
-        lw = 32
+    const fileTreeFixed = 36
+    lw := fileTreeFixed
+    // Ensure right pane keeps at least 20 cols; clamp when terminal is narrow
+    if lw > innerW-20 {
+        if innerW-20 > 20 {
+            lw = innerW - 20
+        } else {
+            lw = 20
+        }
     }
-    if lw > innerW-20 { // keep room for right pane
-        lw = innerW - 20
+    if lw < 20 {
+        lw = 20
     }
     rw := innerW - lw
 	if lw < 20 {
