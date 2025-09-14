@@ -6,7 +6,6 @@ import (
     "os"
     "os/exec"
     "path/filepath"
-    "regexp"
     "sort"
     "strings"
     "time"
@@ -81,9 +80,7 @@ type model struct {
 	logVP     viewport.Model
 	logs      []string
 	ti        textinput.Model
-	renderer  *glamour.TermRenderer
-	statusMsg string
-	errMsg    string
+    statusMsg string
 	now       time.Time
 	// rendering options
 	fastMode bool
@@ -109,7 +106,6 @@ type model struct {
 	gitInRepo          bool
 	hasDelta           bool
 	diffErr            string
-	diffStatus         string
 	// current diff target file + last known stat
 	diffCurrentFile string
 	diffFileModUnix int64
@@ -143,11 +139,7 @@ type mdEntry struct {
 	size    int64
 }
 
-type fileEntry struct {
-	Name  string
-	Path  string
-	IsDir bool
-}
+// fileEntry removed (unused)
 
 type treeNode struct {
 	Name     string
@@ -1256,18 +1248,17 @@ func (m model) View() string {
 }
 
 var (
-	boxStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(uistyle.Vitesse.Border).
-			Background(uistyle.Vitesse.Bg).
-			Padding(0, 1)
-	boxStyleFocus = lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(uistyle.Vitesse.Primary).
-			Background(uistyle.Vitesse.Bg).
-			Padding(0, 1)
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
-	dimStyle    = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
+    boxStyle = lipgloss.NewStyle().
+            BorderStyle(lipgloss.NormalBorder()).
+            BorderForeground(uistyle.Vitesse.Border).
+            Background(uistyle.Vitesse.Bg).
+            Padding(0, 1)
+    boxStyleFocus = lipgloss.NewStyle().
+            BorderStyle(lipgloss.NormalBorder()).
+            BorderForeground(uistyle.Vitesse.Primary).
+            Background(uistyle.Vitesse.Bg).
+            Padding(0, 1)
+    headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
 )
 
 func (m *model) recalcViewports() {
@@ -1387,25 +1378,7 @@ func (m model) termSize() (cols, rows int) {
 	return
 }
 
-func (m *model) buildRenderer() {
-	// Always rebuild with current width to ensure proper wrapping
-	width := m.mdVP.Width
-	if width <= 0 {
-		width = 80
-	}
-	// Adopt demo markdown rendering: account for Glamour's internal gutter
-	// to avoid jagged wrapping.
-	const glamourGutter = 2
-	wrap := width - glamourGutter
-	if wrap < 10 {
-		wrap = 10
-	}
-	r, _ := glamour.NewTermRenderer(
-		glamour.WithStyles(vitesseGlamour()),
-		glamour.WithWordWrap(wrap),
-	)
-	m.renderer = r
-}
+// buildRenderer removed (unused)
 
 // Background render command and message
 type renderDoneMsg struct {
@@ -1603,30 +1576,7 @@ type ptyStartErrMsg struct{ Err string }
 type ptyChunkMsg struct{ Data []byte }
 
 // startPTYCmd starts a persistent shell on a PTY with given size
-func startPTYCmd(cwd string, cols, rows int) tea.Cmd {
-	return func() tea.Msg {
-		p, err := xpty.NewPty(cols, rows)
-		if err != nil {
-			return ptyStartErrMsg{Err: err.Error()}
-		}
-		sh := os.Getenv("SHELL")
-		if sh == "" {
-			if _, err := exec.LookPath("bash"); err == nil {
-				sh = "bash"
-			} else {
-				sh = "sh"
-			}
-		}
-		cmd := exec.Command(sh, "-i")
-		cmd.Dir = cwd
-		cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-		if err := p.Start(cmd); err != nil {
-			_ = p.Close()
-			return ptyStartErrMsg{Err: err.Error()}
-		}
-		return ptyStartedMsg{Pty: p, Cols: cols, Rows: rows}
-	}
-}
+// startPTYCmd removed (unused)
 
 // schedule a single PTY read
 func readPTYOnceCmd(p xpty.Pty) tea.Cmd {
@@ -1961,13 +1911,8 @@ func trimEdgeBlankLines(s string) string {
 	return strings.Join(lines[i:j+1], "\n")
 }
 
-func (m *model) refreshTableRows() {
-	// legacy: unused
-}
-
-func (m model) loadSpecItems() []specItem {
-	return nil
-}
+// refreshTableRows removed (unused)
+// loadSpecItems removed (unused)
 
 func relFrom(root, p string) string {
 	if r, err := filepath.Rel(root, p); err == nil {
@@ -2141,47 +2086,7 @@ func (m *model) setFocus(f focusArea) {
 }
 
 // parseFrontmatterTitle extracts `title:` from the first frontmatter block
-func parseFrontmatterTitle(path string) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	s := string(b)
-	lines := strings.Split(s, "\n")
-	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		return ""
-	}
-	end := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			end = i
-			break
-		}
-	}
-	if end < 0 {
-		return ""
-	}
-	keyRe := regexp.MustCompile(`^([A-Za-z0-9_-]+)\s*:\s*(.*)$`)
-	for _, ln := range lines[1:end] {
-		l := strings.TrimSpace(ln)
-		if l == "" || strings.HasPrefix(l, "#") {
-			continue
-		}
-		if m := keyRe.FindStringSubmatch(l); len(m) == 3 {
-			key := strings.ToLower(strings.TrimSpace(m[1]))
-			if key == "title" {
-				v := strings.TrimSpace(m[2])
-				if len(v) >= 2 {
-					if (v[0] == '\'' && v[len(v)-1] == '\'') || (v[0] == '"' && v[len(v)-1] == '"') {
-						v = v[1 : len(v)-1]
-					}
-				}
-				return v
-			}
-		}
-	}
-	return ""
-}
+// parseFrontmatterTitle removed (unused)
 
 // work/status bar at bottom using lipgloss
 func (m model) renderWorkbar() string {
