@@ -40,7 +40,7 @@ go build -o codectl
 ## Usage
 
 ```bash
-codectl cli                     # Open CLI manager TUI (/add, /remove, /upgrade, ...)
+codectl cli                     # Open CLI manager TUI (operations via slash commands)
 # TODO: optimize this
 # shortcut for: codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
 codectl codex                   # codex + GPT‑5 (high effort)
@@ -59,6 +59,8 @@ codectl check --json            # Output JSON report
 codectl provider sync           # Manually sync/generate ~/.codectl/provider.json (then customize)
 codectl provider schema         # Print JSON Schema of provider.json (for validation/completion)
 ```
+
+Note: All install/remove/upgrade/status operations run inside the TUI via slash commands: /add, /remove, /upgrade, /status. No separate "codectl cli add/remove/..." subcommands are provided currently.
 
 ## Roadmap
 

@@ -11,11 +11,12 @@ lastUpdated: {auto}
 
 ## 1. 概述
 - 定位：面向开发者的 Spec‑Driven Development 工作台与 Code Agent 配置助手。
+- 卖点：以“Spec 工作流（Spec → Task → Coding）”为核心，通过 TUI 将对话与实现即时沉淀为规范与任务，驱动开发与验证，形成闭环。
 - 价值：在“规范先行”的前提下，统一安装/检测/升级主流代码智能体 CLI；集中管理模型与 MCP 清单；提供可视化 TUI 与脚本友好的 CLI。
 - 核心能力：
-  - TUI 总览：展示工具安装状态、版本、可升级提示；支持斜杠命令与操作面板。
-  - Spec UI：`codectl spec` 打开规范工作台（文件树 + Markdown 预览 + 输入/日志），支持从对话快速沉淀文档。
-  - CLI 子命令：`cli`、`config`、`model`、`mcp`、`provider`、`spec`、`check`、`codex`、`update`、`version`、`settings` 等。
+  - Spec 工作流：`codectl spec` 打开规范工作台（文件树 + Markdown 预览 + 输入/日志）；支持 `/spec` 生成规范草案、`/task` 产出任务文档、`codectl check` 校验 frontmatter；鼓励从对话快速固化为可验收的文档。
+  - TUI 总览：展示工具安装状态、版本、可升级提示；支持斜杠命令与操作面板（安装/卸载/升级/状态）。
+  - CLI 命令：`cli`、`config`、`model`、`mcp`、`provider`、`spec`、`check`、`codex`、`update`、`version`、`settings` 等；其中 `codectl cli` 直接进入 TUI，具体操作通过斜杠命令完成。
   - 诊断与升级：检测本地安装与 npm 最新版本；一键安装/升级/卸载。
 
 ## 2. 目标与非目标

@@ -40,7 +40,7 @@ go build -o codectl
 ## 用法
 
 ```bash
-codectl cli                     # 打开 CLI 管理 TUI（支持 /add、/remove、/upgrade 等）
+codectl cli                     # 打开 CLI 管理 TUI（通过斜杠命令操作）
 # TODO: optimize this
 # short cut for codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
 codectl codex                   # codex + gpt 5 high
@@ -59,6 +59,8 @@ codectl check --json            # 以 JSON 报告形式输出
 codectl provider sync           # 手动同步/生成 ~/.codectl/provider.json（可自定义编辑）
 codectl provider schema         # 输出 provider.json 的 JSON Schema（用于校验/补全）
 ```
+
+说明：安装/卸载/升级/状态等操作均在 TUI 内通过斜杠命令完成：/add、/remove、/upgrade、/status；当前不提供独立的 “codectl cli add/remove/...” 子命令。
 
 ## Roadmap
 
