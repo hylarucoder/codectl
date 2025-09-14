@@ -14,17 +14,11 @@ lastUpdated: {auto}
 - 目标：统一命令与输出、可脚本化、提供一致的错误码。
 - 非目标：不替代第三方 CLI 的功能解释与参数说明。
 
-## 3. CLI 子命令（规范）
+## 3. 交互方式（规范）
 
-以下为规划中的 CLI 形态；当前实现以 TUI 斜杠命令为主：`/add`、`/remove`、`/upgrade`、`/status`。
-
-- 规划：`codectl cli add [tool]`
-- 规划：`codectl cli remove [tool]`
-- 规划：`codectl cli update [tool]`
-- 规划：`codectl cli ls`
-- 规划：`codectl cli ls-remote`
-
-说明：`codectl cli` 目前作为命令组入口并直接打开 TUI，具体子命令将按 Roadmap 渐进补齐。
+- `codectl cli`：直接进入 TUI 管理界面。
+- 安装/卸载/升级/状态等操作通过 TUI 斜杠命令执行：`/add`、`/remove`、`/upgrade`、`/status`。
+- 暂不提供 `codectl cli add|remove|update|ls|ls-remote` 等子命令；如需脚本化，后续将评估提供独立命令或 JSON 接口（待定）。
 
 ## 4. 行为与错误码
 - 输出结构、并发策略、超时与错误处理参见 `000-overall.spec.mdx`。
