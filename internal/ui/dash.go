@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
-	zone "github.com/lrstanley/bubblezone"
 
 	"codectl/internal/tools"
 )
@@ -422,9 +421,6 @@ func linesCliStatus(m model) []string {
 		}
 		lines = append(lines, fmt.Sprintf("%-7s: %s", name, ver))
 	}
-	// CTA line
-	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
-	lines = append(lines, "", btn+AfterButton("  统一升级 CLI"))
 	return lines
 }
 
@@ -458,9 +454,6 @@ func linesCliStatusTable(inner int, m model) []string {
 		rows = append(rows, []string{name, installed, ver, latest})
 	}
 	out := renderTable(cw, headers, rows)
-	// Append CTA line
-	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
-	out = append(out, "", btn+AfterButton("  统一升级 CLI"))
 	return out
 }
 
@@ -480,11 +473,7 @@ func linesSpecOverview(inner int, m model) []string {
 		}
 		out = append(out, table...)
 	}
-	// CTA to open Spec UI and Spec/Task tab
-	out = append(out, "")
-    out = append(out, zone.Mark("dash.btn.specui", hlButton("打开 SpecUI"))+AfterButton("  进入规范工作台"))
-    out = append(out, zone.Mark("dash.btn.work", hlButton("Spec/Task"))+AfterButton("  在 SpecUI 打开 Work 标签"))
-    return out
+	return out
 }
 
 // linesConfigOverview merges CLI status table and brief model/MCP lists.
@@ -651,7 +640,7 @@ func linesSlogan() []string {
 
 func linesModels(m model) []string {
 	if m.config.ModelsCount == 0 || len(m.config.Models) == 0 {
-		return []string{"暂无已选择的模型", zone.Mark("dash.btn.settings", hlButton("打开设置")) + AfterButton(" ")}
+		return []string{"暂无已选择的模型"}
 	}
 	lines := []string{"已选择模型:"}
 	for _, s := range m.config.Models {
@@ -662,7 +651,7 @@ func linesModels(m model) []string {
 
 func linesMCP(m model) []string {
 	if m.config.MCPCount == 0 || len(m.config.MCPNames) == 0 {
-		return []string{"暂无 MCP 服务", zone.Mark("dash.btn.settings", hlButton("打开设置")) + AfterButton(" ")}
+		return []string{"暂无 MCP 服务"}
 	}
 	lines := []string{"服务列表:"}
 	for _, n := range m.config.MCPNames {
