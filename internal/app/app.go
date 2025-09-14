@@ -14,7 +14,8 @@ import (
 func Start() error {
 	// Initialize global bubblezone manager for mouse-aware zones.
 	zone.NewGlobal()
-	if _, err := tea.NewProgram(ui.InitialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+	// Disable mouse so terminal-native selection works for copy.
+	if _, err := tea.NewProgram(ui.InitialModel(), tea.WithAltScreen()).Run(); err != nil {
 		return err
 	}
 	return nil

@@ -51,15 +51,15 @@ func newOpsList() list.Model {
 	d.Styles = s
 	l := list.New(items, d, 28, 12)
 	// List chrome styles (title/help/status/pagination) use theme colors if shown
-    ls := list.DefaultStyles()
-    ls.Title = ls.Title.Foreground(Vitesse.Text)
-    ls.PaginationStyle = ls.PaginationStyle.Foreground(Vitesse.Secondary)
-    ls.HelpStyle = ls.HelpStyle.Foreground(Vitesse.Muted)
-    ls.StatusBar = ls.StatusBar.Foreground(Vitesse.Secondary)
-    l.Styles = ls
-    // Do not render internal title; the card handles captioning itself
-    l.Title = ""
-    l.SetShowTitle(false)
+	ls := list.DefaultStyles()
+	ls.Title = ls.Title.Foreground(Vitesse.Text)
+	ls.PaginationStyle = ls.PaginationStyle.Foreground(Vitesse.Secondary)
+	ls.HelpStyle = ls.HelpStyle.Foreground(Vitesse.Muted)
+	ls.StatusBar = ls.StatusBar.Foreground(Vitesse.Secondary)
+	l.Styles = ls
+	// Do not render internal title; the card handles captioning itself
+	l.Title = ""
+	l.SetShowTitle(false)
 	l.SetShowHelp(false)
 	l.SetShowStatusBar(false)
 	l.SetShowFilter(false)

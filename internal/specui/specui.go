@@ -35,7 +35,8 @@ func Start() error {
 	m := initialModel()
 	// Ensure global zone manager exists (idempotent if already created).
 	zone.NewGlobal()
-	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	// Disable mouse so users can select and copy freely in terminal
+	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
 
