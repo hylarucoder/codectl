@@ -1,0 +1,90 @@
+---
+title: Task 工作流规范
+specVersion: 0.1.0
+status: draft
+lastUpdated: {auto}
+---
+
+# Task 工作流规范（草案）
+
+本规范描述在 SDD 模式下“从 Spec 推动 Task，再到 Coding 与验收”的最小闭环，定义 Task 文档的目录结构、命名规则、frontmatter 字段、状态流转、与 Spec 的追踪关系，以及 TUI/CLI 入口与最小校验约束。
+
+## 1. 目标与非目标
+- 目标
+  - 以文档为真源，规范化 Task 的描述、状态与验收标准，使其可被人/机理解并用于自动化检查。
+  - 将对话与实现沉淀为可追溯的 Task 文档，关联到一个或多个 Spec。
+  - 通过 Spec UI 与斜杠命令快速生成 Task 草案，降低启动成本。
+- 非目标
+  - 不规定具体的项目管理方法（如 Scrum/Kanban），但提供最小可用的状态枚举与字段集合。
+
+## 2. 目录与命名
+- 目录：`vibe-docs/task/`
+- 命名：`YYMMDD-HHMMSS-<slug>.task.mdx`（示例：`250914-143015-support-azure-openai.task.mdx`）
+- 由 TUI 斜杠命令 `/task <标题>` 自动创建；若省略标题则使用“未命名任务”。
+
+## 3. Frontmatter 字段
+必填：
+- `title: string`：任务标题（中文可用）。
+
+推荐（用于脚本化/仪表盘）：
+- `owner: string`：责任人（或群组）。
+- `due: YYYY-MM-DD`：目标完成日期。
+- `priority: P0|P1|P2`：优先级（P0=最高）。
+- `status: backlog|in-progress|blocked|done|canceled`：任务状态。
+- `relatedSpec: string[]`：相关规范文件相对路径（如 `vibe-docs/spec/200-xxx.spec.mdx`）。
+- `acceptance: string[]`：验收标准（清单式）。
+- `tags: string[]`：自定义标签。
+- `createdAt: ISO` / `lastUpdated: {auto}`：时间元数据。
+
+正文建议结构：
+- 背景/目标/非目标/实现要点/风险与依赖/参考链接。
+
+## 4. 状态流转
+`backlog → in-progress → done`，中途可转入 `blocked` 或终止为 `canceled`。
+- 进入 `done` 前建议：
+  - 勾选或更新 `acceptance` 项（全部满足）。
+  - 更新 `relatedSpec` 指向已接受的规范（或注明偏差）。
+
+## 5. TUI/CLI 行为
+- 生成：
+  - TUI 斜杠命令：`/task <标题>` 生成模板文件（内置 frontmatter 与正文骨架）。
+  - CLI（规划）：`codectl task new`（后续评估；目前以 TUI 为主）。
+- 关联：
+  - 在 Spec UI 中，允许将当前会话关联到一个 Task（规划）。
+  - 从 Task 打开相关 Spec（规划）。
+- 校验：
+  - 现有 `codectl check` 仅覆盖 `vibe-docs/spec/*.spec.mdx` 的 frontmatter。
+  - 规划扩展：`codectl check --dir vibe-docs/task` 或统一扫描 `spec` + `task`，并校验 Task 至少具备 `title` 字段；当 `status=done` 时，建议 `acceptance` 非空。
+
+## 6. 可追溯性（Traceability）
+- 建议维护 `vibe-docs/spec/traceability.json`：
+  ```json
+  {
+    "requirements": [
+      {
+        "id": "REQ-001",
+        "specRef": "vibe-docs/spec/200-llm-provider.spec.mdx#4",
+        "impl": ["internal/provider/*.go"],
+        "tasks": ["vibe-docs/task/250914-143015-support-azure-openai.task.mdx"],
+        "tests": ["internal/provider/provider_test.go"]
+      }
+    ]
+  }
+  ```
+- 作用：在评审/CI 中输出覆盖与缺口，辅助验收。
+
+## 7. 兼容性与迁移
+- 与现有仓库共存：未采用该规范的历史 Task 可逐步迁移或标注为“legacy”。
+- 文件移动/重命名时，`relatedSpec`、追踪文件需同步更新（可工具化，规划）。
+
+## 8. 安全与隐私
+- 不包含凭据/密钥；如需引用敏感值，使用占位符与说明，不落盘实际值。
+
+## 9. Conformance（用例片段）
+- 创建一个 Task，至少包含 `title`；生成的文件名符合时间戳 + slug 规则。
+- 当 `status=done` 且 `acceptance` 为空时，`codectl check` 发出警告（规划）。
+- 将 Task 关联到 1 个或多个 Spec，并在追踪文件中体现映射（示例见上）。
+
+## 10. 变更记录
+- 0.1.0：初稿（草案）。
+
