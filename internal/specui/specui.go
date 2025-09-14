@@ -96,6 +96,22 @@ type model struct {
 	oscPending bool
 	// markdown cache: path -> width -> entry
 	mdCache map[string]map[int]mdEntry
+	// tab bar: explorer vs diff
+	tab activeTab
+	// Diff view state (File Diff tab)
+	diffTable          table.Model
+	diffItems          []diffRow
+	diffVP             viewport.Model
+	diffMode           diffMode
+	diffFilterSpecOnly bool
+	gitInRepo          bool
+	hasDelta           bool
+	diffErr            string
+	diffStatus         string
+	// current diff target file + last known stat
+	diffCurrentFile string
+	diffFileModUnix int64
+	diffFileSize    int64
 	// focus management
 	focus        focusArea
 	lastTopFocus focusArea
@@ -136,6 +152,35 @@ const (
 	focusPreview
 	focusInput
 )
+
+// top-level tabs
+type activeTab int
+
+const (
+	tabExplorer activeTab = iota
+	tabDiff
+)
+
+// diff compare modes
+type diffMode int
+
+const (
+	diffAll      diffMode = iota // HEAD -> working tree (combined)
+	diffStaged                   // HEAD -> index (staged only)
+	diffWorktree                 // index -> working tree (unstaged only)
+)
+
+type changeItem struct {
+	Path   string
+	Status string // e.g., M/A/D/?? combined short
+	Group  string // Staged / Unstaged / Untracked
+}
+
+type diffRow struct {
+	Header string // non-empty means a header row (group title)
+	Item   *changeItem
+	Text   string
+}
 
 func initialModel() model {
 	wd, _ := os.Getwd()
@@ -191,6 +236,38 @@ func initialModel() model {
 	m.focus = focusFiles
 	m.fileTable.Focus()
 	m.ti.Blur()
+	// default tab: explorer
+	m.tab = tabExplorer
+	// init diff table
+	dt := table.New(
+		table.WithColumns([]table.Column{{Title: "Changes", Width: 32}}),
+		table.WithHeight(20),
+	)
+	dts := table.DefaultStyles()
+	dts.Header = dts.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(uistyle.Vitesse.Border).
+		BorderBottom(true).
+		Bold(false).
+		Padding(0, 0).
+		Foreground(uistyle.Vitesse.Secondary).
+		Background(uistyle.Vitesse.Bg)
+	dts.Cell = dts.Cell.
+		Padding(0, 0).
+		Foreground(uistyle.Vitesse.Text).
+		Background(uistyle.Vitesse.Bg)
+	dts.Selected = dts.Selected.
+		Foreground(uistyle.Vitesse.OnAccent).
+		Background(uistyle.Vitesse.Primary).
+		Bold(false)
+	dt.SetStyles(dts)
+	m.diffTable = dt
+	// detect git repo (best-effort)
+	if r, err := system.GitRoot(context.Background(), wd); err == nil && strings.TrimSpace(r) != "" {
+		m.gitInRepo = true
+	}
+	m.diffMode = diffAll
+	m.diffFilterSpecOnly = false
 	m.expanded = map[string]bool{}
 	m.expanded[m.fmRoot] = true
 	m.reloadTree()
@@ -218,6 +295,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		// Focus panes by clicking their zones
 		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			// tab bar clicks
+			if zone.Get("spec.tab.explorer").InBounds(msg) {
+				m.tab = tabExplorer
+				m.setFocus(focusFiles)
+				return m, nil
+			}
+			if zone.Get("spec.tab.diff").InBounds(msg) {
+				m.tab = tabDiff
+				m.setFocus(focusFiles)
+				return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+			}
 			if zone.Get("spec.input").InBounds(msg) {
 				m.setFocus(focusInput)
 				return m, nil
@@ -310,12 +398,103 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key := msg.String(); key == "ctrl+c" || key == "q" {
 			return m, tea.Quit
 		}
+		// global tab switching
+		switch msg.String() {
+		case "1":
+			m.tab = tabExplorer
+			m.setFocus(focusFiles)
+			return m, nil
+		case "2":
+			m.tab = tabDiff
+			m.setFocus(focusFiles)
+			return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+		case "tab":
+			if m.tab == tabExplorer {
+				m.tab = tabDiff
+				return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+			}
+			m.tab = tabExplorer
+			return m, nil
+		}
 		switch m.page {
 		case pageDetail:
 			switch msg.String() {
-			case "enter":
-				// Only handle Enter for the file tree when the file pane is focused.
+			case "j", "k":
+				// Vim-style navigation
 				if m.focus == focusFiles {
+					if m.tab == tabExplorer {
+						n := m.fileTable.Cursor()
+						if msg.String() == "j" {
+							n++
+						} else {
+							n--
+						}
+						if n < 0 {
+							n = 0
+						}
+						if n >= len(m.visible) {
+							n = len(m.visible) - 1
+						}
+						if n >= 0 && n != m.fileTable.Cursor() {
+							m.fileTable.SetCursor(n)
+							// auto-open markdown files on move
+							node := m.visible[n].Node
+							if !node.IsDir && isMarkdown(node.Path) {
+								it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+								m.selected = &it
+								m.ti.Reset()
+								m.ti.Blur()
+								m.recalcViewports()
+								m.statusMsg = "按 Esc 返回"
+								m.mdVP.SetContent("渲染中…")
+								return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
+							}
+						}
+						return m, nil
+					} else {
+						// Diff tab
+						n := m.diffTable.Cursor()
+						if msg.String() == "j" {
+							n++
+						} else {
+							n--
+						}
+						if n < 0 {
+							n = 0
+						}
+						if n >= len(m.diffItems) {
+							n = len(m.diffItems) - 1
+						}
+						if n >= 0 && n != m.diffTable.Cursor() {
+							m.diffTable.SetCursor(n)
+							if it := m.diffItems[n].Item; it != nil {
+								m.diffVP.SetContent("载入中…")
+								return m, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
+							}
+						}
+						return m, nil
+					}
+				}
+				if m.focus == focusPreview {
+					if m.tab == tabExplorer {
+						if msg.String() == "j" {
+							m.mdVP.LineDown(1)
+						} else {
+							m.mdVP.LineUp(1)
+						}
+					} else {
+						if msg.String() == "j" {
+							m.diffVP.LineDown(1)
+						} else {
+							m.diffVP.LineUp(1)
+						}
+					}
+					return m, nil
+				}
+				return m, nil
+			case "enter":
+				// Only handle Enter for the left pane when it is focused.
+				if m.focus == focusFiles && m.tab == tabExplorer {
 					// open selection: dir -> toggle expand; file -> render
 					if len(m.visible) == 0 {
 						return m, nil
@@ -346,10 +525,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mdVP.SetContent("渲染中…")
 					return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
 				}
+				if m.focus == focusFiles && m.tab == tabDiff {
+					// open diff for selected change item
+					if len(m.diffItems) == 0 {
+						return m, nil
+					}
+					idx := m.diffTable.Cursor()
+					if idx < 0 || idx >= len(m.diffItems) {
+						return m, nil
+					}
+					row := m.diffItems[idx]
+					if row.Item == nil {
+						return m, nil
+					}
+					// trigger diff render and move focus to preview
+					m.diffVP.SetContent("载入中…")
+					m.diffCurrentFile = row.Item.Path
+					if fi, err := os.Stat(filepath.Join(m.root, row.Item.Path)); err == nil {
+						m.diffFileModUnix = fi.ModTime().Unix()
+						m.diffFileSize = fi.Size()
+					}
+					m.setFocus(focusPreview)
+					return m, renderDiffCmd(m.root, row.Item.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
+				}
 				// If input is focused, let the input handler process Enter below.
 			case "left", "backspace":
 				// Only treat Left/Backspace as tree navigation when file pane focused.
-				if m.focus == focusFiles {
+				if m.focus == focusFiles && m.tab == tabExplorer {
 					// collapse dir or move to parent
 					if len(m.visible) == 0 {
 						return m, nil
@@ -376,6 +578,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.fileTable.SetCursor(i)
 								break
 							}
+						}
+					}
+					return m, nil
+				}
+				// In Diff tab: Left cycles diff mode backwards; Backspace ignored
+				if m.focus == focusFiles && m.tab == tabDiff && msg.String() == "left" {
+					if m.diffMode == diffAll {
+						m.diffMode = diffWorktree
+					} else {
+						m.diffMode--
+					}
+					idx := m.diffTable.Cursor()
+					if idx >= 0 && idx < len(m.diffItems) {
+						if it := m.diffItems[idx].Item; it != nil {
+							m.diffVP.SetContent("载入中…")
+							return m, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
 						}
 					}
 					return m, nil
@@ -416,20 +634,61 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = ""
 				return m, nil
 			case "r":
-				// reload md (async)
-				if m.selected != nil {
-					m.mdVP.SetContent("渲染中…")
-					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+				// reload based on tab
+				if m.tab == tabExplorer {
+					if m.selected != nil {
+						m.mdVP.SetContent("渲染中…")
+						return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+					}
+					return m, nil
 				}
-				return m, nil
+				// Diff: refresh list and current diff
+				cmds := []tea.Cmd{refreshDiffListCmd(m.root, m.diffFilterSpecOnly)}
+				idx := m.diffTable.Cursor()
+				if idx >= 0 && idx < len(m.diffItems) {
+					if it := m.diffItems[idx].Item; it != nil {
+						m.diffCurrentFile = it.Path
+						if fi, err := os.Stat(filepath.Join(m.root, it.Path)); err == nil {
+							m.diffFileModUnix = fi.ModTime().Unix()
+							m.diffFileSize = fi.Size()
+						}
+						cmds = append(cmds, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta))
+					}
+				}
+				return m, tea.Batch(cmds...)
 			case "f":
-				// toggle fast mode and re-render
-				m.fastMode = !m.fastMode
-				if m.selected != nil {
-					m.mdVP.SetContent("渲染中…")
-					return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+				// Explorer: toggle fast markdown mode; Diff: toggle spec-only filter
+				if m.tab == tabExplorer {
+					m.fastMode = !m.fastMode
+					if m.selected != nil {
+						m.mdVP.SetContent("渲染中…")
+						return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+					}
+					return m, nil
 				}
-				return m, nil
+				m.diffFilterSpecOnly = !m.diffFilterSpecOnly
+				return m, refreshDiffListCmd(m.root, m.diffFilterSpecOnly)
+			case "right":
+				if m.tab == tabDiff {
+					if m.diffMode == diffWorktree {
+						m.diffMode = diffAll
+					} else {
+						m.diffMode++
+					}
+					idx := m.diffTable.Cursor()
+					if idx >= 0 && idx < len(m.diffItems) {
+						if it := m.diffItems[idx].Item; it != nil {
+							m.diffVP.SetContent("载入中…")
+							m.diffCurrentFile = it.Path
+							if fi, err := os.Stat(filepath.Join(m.root, it.Path)); err == nil {
+								m.diffFileModUnix = fi.ModTime().Unix()
+								m.diffFileSize = fi.Size()
+							}
+							return m, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
+						}
+					}
+					return m, nil
+				}
 			case "t":
 				// terminal toggle disabled (no terminal binding)
 				return m, nil
@@ -465,23 +724,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			// route updates based on focus
 			if m.focus == focusFiles {
-				prev := m.fileTable.Cursor()
-				m.fileTable, cmd = m.fileTable.Update(msg)
-				cmds = append(cmds, cmd)
-				// When moving selection in the file tree, auto-open markdown files on the right
-				cur := m.fileTable.Cursor()
-				if cur != prev && cur >= 0 && cur < len(m.visible) {
-					node := m.visible[cur].Node
-					if !node.IsDir && isMarkdown(node.Path) {
-						it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
-						m.selected = &it
-						m.ti.Reset()
-						m.ti.Blur()
-						m.recalcViewports()
-						m.statusMsg = "按 Esc 返回"
-						m.mdVP.SetContent("渲染中…")
-						cmds = append(cmds, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode))
-						return m, tea.Batch(cmds...)
+				if m.tab == tabExplorer {
+					prev := m.fileTable.Cursor()
+					m.fileTable, cmd = m.fileTable.Update(msg)
+					cmds = append(cmds, cmd)
+					// When moving selection, auto-open markdown files on the right
+					cur := m.fileTable.Cursor()
+					if cur != prev && cur >= 0 && cur < len(m.visible) {
+						node := m.visible[cur].Node
+						if !node.IsDir && isMarkdown(node.Path) {
+							it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+							m.selected = &it
+							m.ti.Reset()
+							m.ti.Blur()
+							m.recalcViewports()
+							m.statusMsg = "按 Esc 返回"
+							m.mdVP.SetContent("渲染中…")
+							cmds = append(cmds, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode))
+							return m, tea.Batch(cmds...)
+						}
+					}
+				} else {
+					prev := m.diffTable.Cursor()
+					m.diffTable, cmd = m.diffTable.Update(msg)
+					cmds = append(cmds, cmd)
+					cur := m.diffTable.Cursor()
+					if cur != prev && cur >= 0 && cur < len(m.diffItems) {
+						if it := m.diffItems[cur].Item; it != nil {
+							m.diffVP.SetContent("载入中…")
+							m.diffCurrentFile = it.Path
+							if fi, err := os.Stat(filepath.Join(m.root, it.Path)); err == nil {
+								m.diffFileModUnix = fi.ModTime().Unix()
+								m.diffFileSize = fi.Size()
+							}
+							cmds = append(cmds, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta))
+							return m, tea.Batch(cmds...)
+						}
 					}
 				}
 			}
@@ -490,8 +768,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 			if m.focus == focusPreview {
-				m.mdVP, cmd = m.mdVP.Update(msg)
-				cmds = append(cmds, cmd)
+				if m.tab == tabExplorer {
+					m.mdVP, cmd = m.mdVP.Update(msg)
+					cmds = append(cmds, cmd)
+				} else {
+					m.diffVP, cmd = m.diffVP.Update(msg)
+					cmds = append(cmds, cmd)
+				}
 			}
 			return m, tea.Batch(cmds...)
 		}
@@ -499,7 +782,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.now = time.Time(msg)
 		// Periodically ensure preview reflects on-disk changes.
 		// If the selected file's modtime/size changed, re-render asynchronously.
-		if m.page == pageDetail && m.selected != nil {
+		if m.page == pageDetail && m.tab == tabExplorer && m.selected != nil {
 			path := m.selected.Path
 			width := m.mdVP.Width
 			if width <= 0 {
@@ -529,6 +812,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		// Auto-refresh diff preview when current file changes on disk.
+		if m.page == pageDetail && m.tab == tabDiff && m.diffCurrentFile != "" {
+			abs := filepath.Join(m.root, m.diffCurrentFile)
+			if fi, err := os.Stat(abs); err == nil {
+				mod := fi.ModTime().Unix()
+				size := fi.Size()
+				if mod != m.diffFileModUnix || size != m.diffFileSize {
+					m.diffFileModUnix, m.diffFileSize = mod, size
+					return m, tea.Batch(tickCmd(), renderDiffCmd(m.root, m.diffCurrentFile, m.diffMode, m.diffVP.Width, m.hasDelta))
+				}
+			}
+		}
+
 		// Periodically ensure file tree reflects directory entry changes.
 		if m.page == pageDetail && m.treeRoot != nil {
 			newStamp, newCount := m.computeTreeFingerprint()
@@ -550,6 +846,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tickCmd()
+	case diffListMsg:
+		if msg.Err != "" {
+			m.diffErr = msg.Err
+			m.diffItems = nil
+			m.diffTable.SetRows(nil)
+			return m, nil
+		}
+		m.diffErr = ""
+		m.diffItems = buildDiffRows(msg.Items)
+		m.diffTable.SetRows(diffRowsToTable(m.diffItems))
+		// clamp cursor
+		if c := m.diffTable.Cursor(); c >= len(m.diffItems) {
+			m.diffTable.SetCursor(len(m.diffItems) - 1)
+		}
+		return m, nil
+	case diffRenderedMsg:
+		if msg.Err != "" {
+			m.diffVP.SetContent("渲染失败：" + msg.Err)
+			return m, nil
+		}
+		m.diffVP.SetContent(trimEdgeBlankLines(msg.Out))
+		return m, nil
+	case deltaCheckMsg:
+		m.hasDelta = bool(msg)
+		return m, nil
 	case ptyStartErrMsg:
 		m.logs = append(m.logs, "[pty error] "+msg.Err)
 		m.logVP.SetContent(strings.Join(m.logs, "\n"))
@@ -651,7 +972,7 @@ func (m model) View() string {
 		// Ensure focused pane styles also keep zero inner padding (avoid width jitter)
 		leftBox = leftBox.Padding(0, 0)
 		rightBox = rightBox.Padding(0, 0)
-		// top: split left (file manager) and right (markdown)
+		// top: split left/right; plus a tabs bar above
 		lw := m.leftW
 		rw := m.rightW
 		// Fixed-width render to avoid jitter when selection changes
@@ -661,38 +982,61 @@ func (m model) View() string {
 		if rw < 3 {
 			rw = 3
 		}
-		left := leftBox.Width(lw).Render(m.fileTable.View())
-		left = zone.Mark("spec.files", left)
-		// right: header with filename + divider + markdown viewport
-		var fname string
-		if m.selected != nil {
-			fname = relFrom(m.root, m.selected.Path)
+		var left string
+		var right string
+		if m.tab == tabExplorer {
+			left = leftBox.Width(lw).Render(m.fileTable.View())
+			left = zone.Mark("spec.files", left)
+			// right: header with filename + divider + markdown viewport
+			var fname string
+			if m.selected != nil {
+				fname = relFrom(m.root, m.selected.Path)
+			} else {
+				fname = "(未选择文件)"
+			}
+			// divider under filename sized to preview width; clip long names
+			sepWidth := rw - 2
+			if sepWidth <= 0 {
+				sepWidth = 1
+			}
+			clipW := sepWidth - 2
+			if clipW < 1 {
+				clipW = sepWidth
+			}
+			nameClipped := fname
+			if xansi.StringWidth(nameClipped) > clipW {
+				nameClipped = xansi.Truncate(nameClipped, clipW, "…")
+			}
+			divider := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render(strings.Repeat("─", sepWidth))
+			rightInner := lipgloss.JoinVertical(lipgloss.Left,
+				headerStyle.Render(" "+nameClipped+" "),
+				divider,
+				m.mdVP.View(),
+			)
+			right = rightBox.Width(rw).Render(rightInner)
+			right = zone.Mark("spec.preview", right)
 		} else {
-			fname = "(未选择文件)"
+			// Diff tab
+			left = leftBox.Width(lw).Render(m.diffTable.View())
+			left = zone.Mark("spec.files", left)
+			// right: header shows mode/delta
+			sepWidth := rw - 2
+			if sepWidth <= 0 {
+				sepWidth = 1
+			}
+			title := fmt.Sprintf(" Diff — %s — Delta:%s ", diffModeLabel(m.diffMode), onOff(m.hasDelta))
+			divider := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render(strings.Repeat("─", sepWidth))
+			rightInner := lipgloss.JoinVertical(lipgloss.Left,
+				headerStyle.Render(title),
+				divider,
+				m.diffVP.View(),
+			)
+			right = rightBox.Width(rw).Render(rightInner)
+			right = zone.Mark("spec.preview", right)
 		}
-		// divider under filename sized to preview width; clip long names
-		// divider width equals right pane inner content width (pane - borders)
-		sepWidth := rw - 2
-		if sepWidth <= 0 {
-			sepWidth = 1
-		}
-		clipW := sepWidth - 2
-		if clipW < 1 {
-			clipW = sepWidth
-		}
-		nameClipped := fname
-		if xansi.StringWidth(nameClipped) > clipW {
-			nameClipped = xansi.Truncate(nameClipped, clipW, "…")
-		}
-		divider := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render(strings.Repeat("─", sepWidth))
-		rightInner := lipgloss.JoinVertical(lipgloss.Left,
-			headerStyle.Render(" "+nameClipped+" "),
-			divider,
-			m.mdVP.View(),
-		)
-		right := rightBox.Width(rw).Render(rightInner)
-		right = zone.Mark("spec.preview", right)
-		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+		// tabs bar on top
+		tabs := m.renderTabs()
+		top := tabs + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
 		bottomInput := inputBox.Render(m.ti.View())
 		bottom := zone.Mark("spec.input", bottomInput) + "\n" + m.renderWorkbar()
@@ -798,9 +1142,9 @@ func (m *model) recalcViewports() {
 		rw = 20
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
-	// left (file list) uses table height directly; right is markdown viewport
-	// right also reserves 2 lines for filename header and divider inside the box
-	mdW, mdH := rw-2, topH-2
+	// left (file list) uses table height directly; right is viewport content
+	// Deduct: 1 line for tabs bar + 2 lines for right header/divider inside box
+	mdW, mdH := rw-2, topH-3
 	if mdH > 2 {
 		mdH -= 2
 	} else if mdH > 0 {
@@ -825,6 +1169,12 @@ func (m *model) recalcViewports() {
 		m.mdVP.Width = mdW
 		m.mdVP.Height = mdH
 	}
+	if m.diffVP.Width == 0 && m.diffVP.Height == 0 {
+		m.diffVP = viewport.New(mdW, mdH)
+	} else {
+		m.diffVP.Width = mdW
+		m.diffVP.Height = mdH
+	}
 	// viewport Y position left default; header/divider are inside the right pane
 	// Sync file table column width and viewport width with left pane width so
 	// that selection highlight covers the whole line and truncation is reasonable.
@@ -836,9 +1186,11 @@ func (m *model) recalcViewports() {
 			colW = 10
 		}
 	}
-	// Only one column: Files
+	// Only one column: Files / Changes
 	m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
 	m.fileTable.SetWidth(colW)
+	m.diffTable.SetColumns([]table.Column{{Title: "Changes", Width: colW}})
+	m.diffTable.SetWidth(colW)
 	// log viewport unused in this layout
 
 	// input width adjust
@@ -1125,6 +1477,165 @@ func writePTYCmd(p xpty.Pty, data []byte) tea.Cmd {
 }
 
 // (no VT input pumping; keys write directly to PTY)
+// --- Diff integration commands & helpers ---
+
+// diff messages
+type diffListMsg struct {
+	Items []changeItem
+	Err   string
+}
+type diffRenderedMsg struct {
+	Out string
+	Err string
+}
+type deltaCheckMsg bool
+
+// check if delta exists in PATH
+func checkDeltaCmd() tea.Cmd {
+	return func() tea.Msg { _, err := exec.LookPath("delta"); return deltaCheckMsg(err == nil) }
+}
+
+// refreshDiffListCmd lists changed/untracked files via porcelain -z
+func refreshDiffListCmd(root string, onlySpec bool) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := exec.LookPath("git"); err != nil {
+			return diffListMsg{Err: "未检测到 Git"}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "-z")
+		out, err := cmd.Output()
+		if err != nil {
+			return diffListMsg{Err: "Git 状态获取失败"}
+		}
+		items := parsePorcelainZ(out)
+		if onlySpec {
+			prefix := filepath.ToSlash(filepath.Join("vibe-docs", "spec")) + "/"
+			filtered := make([]changeItem, 0, len(items))
+			for _, it := range items {
+				if strings.HasPrefix(filepath.ToSlash(it.Path), prefix) {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
+		}
+		return diffListMsg{Items: items}
+	}
+}
+
+// render diff for single file; optionally pipe through delta
+func renderDiffCmd(root, file string, mode diffMode, width int, useDelta bool) tea.Cmd {
+	return func() tea.Msg {
+		if _, err := exec.LookPath("git"); err != nil {
+			return diffRenderedMsg{Err: "未检测到 Git"}
+		}
+		args := []string{"-C", root, "--no-pager", "diff", "--color=always"}
+		switch mode {
+		case diffAll:
+			args = append(args, "HEAD")
+		case diffStaged:
+			args = []string{"-C", root, "--no-pager", "diff", "--color=always", "--staged"}
+		case diffWorktree:
+			// default index..worktree
+		}
+		args = append(args, "--", file)
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		gitOut, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()
+		if err != nil && len(gitOut) == 0 {
+			return diffRenderedMsg{Err: fmt.Sprintf("git diff 失败: %v", err)}
+		}
+		if useDelta {
+			if _, err2 := exec.LookPath("delta"); err2 == nil {
+				dargs := []string{"--paging=never"}
+				if width > 0 {
+					dargs = append(dargs, fmt.Sprintf("--width=%d", width))
+				}
+				dctx, dcancel := context.WithTimeout(context.Background(), 6*time.Second)
+				defer dcancel()
+				dc := exec.CommandContext(dctx, "delta", dargs...)
+				dc.Stdin = strings.NewReader(string(gitOut))
+				dout, derr := dc.CombinedOutput()
+				if derr == nil && len(dout) > 0 {
+					return diffRenderedMsg{Out: string(dout)}
+				}
+			}
+		}
+		return diffRenderedMsg{Out: string(gitOut)}
+	}
+}
+
+// parsePorcelainZ parses `git status --porcelain=v1 -z` output into items.
+func parsePorcelainZ(b []byte) []changeItem {
+	items := make([]changeItem, 0, 16)
+	i := 0
+	for i < len(b) {
+		if i+3 > len(b) {
+			break
+		}
+		X := b[i]
+		Y := b[i+1]
+		// skip status and space
+		i += 3
+		start := i
+		for i < len(b) && b[i] != 0x00 {
+			i++
+		}
+		path := string(b[start:i])
+		if i < len(b) && b[i] == 0x00 {
+			i++
+		}
+		group := ""
+		if X == '?' && Y == '?' {
+			group = "Untracked"
+		} else if X != ' ' && X != '?' {
+			group = "Staged"
+		} else if Y != ' ' {
+			group = "Unstaged"
+		} else {
+			group = "Unstaged"
+		}
+		status := strings.TrimSpace(string([]byte{X}))
+		if status == "" || status == "?" {
+			status = string([]byte{Y})
+		}
+		items = append(items, changeItem{Path: path, Status: status, Group: group})
+	}
+	return items
+}
+
+// buildDiffRows groups change items by Group and injects headers
+func buildDiffRows(items []changeItem) []diffRow {
+	groups := []string{"Unstaged", "Staged", "Untracked"}
+	out := make([]diffRow, 0, len(items)+3)
+	for _, g := range groups {
+		addedHeader := false
+		for _, it := range items {
+			if it.Group != g {
+				continue
+			}
+			if !addedHeader {
+				out = append(out, diffRow{Header: g, Text: fmt.Sprintf("— %s —", g)})
+				addedHeader = true
+			}
+			label := fmt.Sprintf("[%s] %s", it.Status, it.Path)
+			copy := it // avoid aliasing pointer to loop var
+			out = append(out, diffRow{Item: &copy, Text: label})
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, diffRow{Header: "No changes", Text: "(no changes)"})
+	}
+	return out
+}
+
+func diffRowsToTable(rows []diffRow) []table.Row {
+	out := make([]table.Row, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, table.Row{r.Text})
+	}
+	return out
+}
 
 // (VT key mapping removed; we directly convert keys to PTY bytes below)
 
@@ -1442,9 +1953,16 @@ func (m *model) setFocus(f focusArea) {
 		m.ti.Blur()
 	}
 	if f == focusFiles {
-		m.fileTable.Focus()
+		if m.tab == tabExplorer {
+			m.fileTable.Focus()
+			m.diffTable.Blur()
+		} else {
+			m.diffTable.Focus()
+			m.fileTable.Blur()
+		}
 	} else {
 		m.fileTable.Blur()
+		m.diffTable.Blur()
 	}
 }
 
@@ -1493,7 +2011,7 @@ func parseFrontmatterTitle(path string) string {
 
 // work/status bar at bottom using lipgloss
 func (m model) renderWorkbar() string {
-	// left segments depend on current page
+	// left segments depend on current page/tab
 	left := []string{}
 	if m.page == pageSelect {
 		label := "No files"
@@ -1507,25 +2025,41 @@ func (m model) renderWorkbar() string {
 		left = append(left, "↑/↓ 选择")
 		left = append(left, "Enter 打开")
 	} else {
-		if m.selected != nil {
-			left = append(left, filepath.Base(m.selected.Path))
+		if m.tab == tabExplorer {
+			if m.selected != nil {
+				left = append(left, filepath.Base(m.selected.Path))
+			} else {
+				left = append(left, "No file selected")
+			}
+			left = append(left, "↵ 记录")
+			left = append(left, "! 执行")
+			left = append(left, "r 载入")
+			left = append(left, "f 快速")
+			left = append(left, "Esc 返回")
 		} else {
-			left = append(left, "No file selected")
+			left = append(left, "File Diff")
+			left = append(left, fmt.Sprintf("模式:%s", diffModeLabel(m.diffMode)))
+			if m.diffFilterSpecOnly {
+				left = append(left, "过滤:spec/开")
+			} else {
+				left = append(left, "过滤:关")
+			}
+			left = append(left, "r 刷新")
+			left = append(left, "f 过滤")
+			left = append(left, "←/→ 模式")
 		}
-		left = append(left, "↵ 记录")
-		left = append(left, "! 执行")
-		left = append(left, "r 载入")
-		left = append(left, "f 快速")
-		// terminal binding removed: no 't'/'Tab' hints
-		left = append(left, "Esc 返回")
 	}
 	// right segments
 	right := []string{}
 	if m.page == pageDetail {
-		if m.fastMode {
-			right = append(right, "快速:开")
+		if m.tab == tabExplorer {
+			if m.fastMode {
+				right = append(right, "快速:开")
+			} else {
+				right = append(right, "快速:关")
+			}
 		} else {
-			right = append(right, "快速:关")
+			right = append(right, fmt.Sprintf("Delta:%s", onOff(m.hasDelta)))
 		}
 	}
 	if !m.now.IsZero() {
@@ -1534,6 +2068,51 @@ func (m model) renderWorkbar() string {
 		right = append(right, time.Now().Format("15:04"))
 	}
 	return renderStatusBarStyled(m.width, left, right)
+}
+
+func (m model) renderTabs() string {
+	// simple two-tab bar
+	active := lipgloss.NewStyle().Bold(true).
+		Foreground(uistyle.Vitesse.OnAccent).
+		Background(uistyle.Vitesse.Primary).
+		Padding(0, 1)
+	inactive := lipgloss.NewStyle().
+		Foreground(uistyle.Vitesse.Secondary).
+		Background(uistyle.Vitesse.Bg)
+	sep := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render("│")
+	var exp, dif string
+	if m.tab == tabExplorer {
+		exp = active.Render("1 File Explorer")
+		dif = inactive.Render(" 2 File Diff ")
+	} else {
+		exp = inactive.Render(" 1 File Explorer ")
+		dif = active.Render("2 File Diff")
+	}
+	// mark zones for click
+	exp = zone.Mark("spec.tab.explorer", exp)
+	dif = zone.Mark("spec.tab.diff", dif)
+	line := exp + sep + dif
+	// extend to full width with background
+	return lipgloss.NewStyle().Background(uistyle.Vitesse.Bg).Width(m.width).Render(line)
+}
+
+func diffModeLabel(mo diffMode) string {
+	switch mo {
+	case diffAll:
+		return "HEAD→工作区"
+	case diffStaged:
+		return "HEAD→暂存区"
+	case diffWorktree:
+		return "暂存区→工作区"
+	}
+	return "HEAD→工作区"
+}
+
+func onOff(b bool) string {
+	if b {
+		return "开"
+	}
+	return "关"
 }
 
 // periodic tick for clock updates

@@ -1,5 +1,5 @@
 ---
-title: codectl — 产品与技术规格
+title: CODECTL — 产品与技术规格
 specVersion: 0.1.0
 status: accepted
 lastUpdated: {auto}
@@ -55,9 +55,11 @@ lastUpdated: {auto}
 - 工作流总览与任务闭环：见 `./500-task-workflow.spec.mdx`
 - Spec UI 界面与交互：见 `./201-tui-spec-ui.spec.mdx`
 - 多 Spec 会话（并行讨论）：见 `./410-specui-sessions.spec.mdx`
+- Spec UI 顶部 Tab 与 File Diff：见 `./202-tui-specui-tabs-diff.spec.mdx`
 
 ### 6.2 TUI 界面
 - 首页 Dashboard（概览、配置、操作）：见 `./201-tui-dash.spec.mdx`
+- Spec UI 工作台（文件树/Markdown 预览/日志与输入）：见 `./201-tui-spec-ui.spec.mdx`
 
 ### 6.3 CLI 与工具管理
 - CLI 总体与 Coding Agent 管理：见 `./100-cli-coding-agent.spec.mdx`
@@ -87,6 +89,14 @@ lastUpdated: {auto}
   - `errors`: number（总错误数）
   - `warnings`: number（总警告数）
 
+- 前置条件与校验要点（摘要）
+  - Frontmatter 最低要求：`title`、`specVersion`、`status`（区分大小写）。
+  - `specVersion` 使用语义化版本（如 `0.1.0`）。
+  - `status` 取值建议：`draft` | `accepted` | `deprecated`（其他值将标记为 warning）。
+  - `lastUpdated` 可选；值可为占位 `{auto}`（由工具在渲染或发布时写入）。
+  - 文件应位于 `vibe-docs/spec/**` 且以 `.spec.mdx` 结尾；否则将给出 warning。
+  - 字段名大小写敏感：例如必须是 `specVersion` 而非 `specversion`。
+
 示例：
 
 ```json
@@ -97,7 +107,7 @@ lastUpdated: {auto}
     {
       "path": "/path/to/repo/vibe-docs/spec/000-overall.spec.mdx",
       "hasFrontmatter": true,
-      "fields": {"title": "codectl — 产品与技术规格", "specversion": "0.1.0", "status": "accepted"},
+      "fields": {"title": "CODECTL — 产品与技术规格", "specVersion": "0.1.0", "status": "accepted"},
       "warnings": [],
       "errors": []
     }

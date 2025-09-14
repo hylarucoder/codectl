@@ -1,0 +1,105 @@
+---
+title: TUI — Spec UI 顶部 Tab 与 File Diff 规范
+specVersion: 0.1.0
+status: draft
+lastUpdated: {auto}
+---
+
+# TUI — Spec UI 顶部 Tab 与 File Diff 规范（草案）
+
+本规范定义 Spec UI 顶部双标签页（File Explorer / File Diff）的信息架构、交互与实现约束。目标是在保持“简单界面、键盘优先、只读浏览”的前提下，为 SDD 工作流提供高效的改动查看能力。
+
+## 1. 目标与非目标
+- 目标
+  - 在 Spec UI 顶部提供两个 Tab：File Explorer（原有浏览/预览/日志/输入）与 File Diff（新增，只读 diff 浏览）。
+  - Diff 视图优先使用 git-delta 渲染，缺省降级为原生 `git diff` 彩色输出；支持快速过滤与模式切换。
+  - 与现有 Spec 工作流融合：默认聚焦 `vibe-docs/spec/**` 改动，便于查看规范演进。
+- 非目标
+  - 不在 Diff 视图内提供写操作（暂存、撤销、提交、分块暂存等）。
+  - 不实现复杂布局定制；保持最小可用与清晰信息架构。
+
+## 2. 顶部标签（Tab Bar）
+- 位置：Spec UI 顶部一行，左对齐显示两个标签：`File Explorer` | `File Diff`。
+- 状态：高亮当前标签；切换时保留各自独立的内部状态（滚动位置、选择项、过滤与模式）。
+- 切换方式：
+  - 键位：`Tab`/`Shift+Tab` 在两个标签间切换；`1` → Explorer，`2` → Diff。
+  - 鼠标（可选）：点击标签切换。
+
+## 3. File Explorer（沿用现有规范）
+- 语义：对应《201-tui-spec-ui.spec.mdx》定义的 Files/Preview/Logs/Input 四区布局与交互。
+- 兼容：本规范不改变其键位，仅定义与 Diff 标签页之间的切换与状态保留。
+
+## 4. File Diff（新增）
+### 4.1 布局
+- 左侧：改动文件列表（Changes List）
+  - 分组：Unstaged / Staged / Untracked（按存在性与 `git status --porcelain` 推断）。
+  - 行内容：`[M/A/D/?] <path>`，图标或字母标识变更类型。
+  - 过滤：可切换“仅看 `vibe-docs/spec/**`”。
+- 右侧：Diff 视图（Viewport）
+  - 渲染所选文件的 diff；支持软换行、滚动、快速跳转下一个 hunk（后续强化）。
+- 顶部状态条（Status Bar）
+  - 显示：当前分支、对比模式、是否启用 delta、文件计数与过滤状态。
+
+### 4.2 数据来源与命令
+- 仓库探测：启动时检测是否在 Git 仓库（`git rev-parse --is-inside-work-tree`）。
+- 文件列表：`git status --porcelain=v1 -z` 解析为变更条目并分组显示。
+- Diff 生成：优先使用 delta，否则使用原生 git：
+  - delta：`git -c core.pager='delta --paging=never' --no-pager diff <range> -- <file>`
+  - fallback：`git --no-pager diff --color=always <range> -- <file>`
+- 对比模式 `<range>`：
+  - `HEAD..`（HEAD → 工作区与暂存的综合对比，默认）
+  - `--staged`（HEAD → 暂存区）
+  - `HEAD -- <file>` 与 `-- <file>` 的组合用于单文件 diff。
+
+### 4.3 交互与键位（Diff 页专属）
+- 列表区（左）：
+  - 上/下：移动选择；`Enter` 渲染该文件 diff。
+  - `f`：切换“仅看 `vibe-docs/spec/**`”。
+  - `r`：刷新文件列表与当前 diff（重新执行 git 命令）。
+- 模式切换：
+  - `←/→`：在三种对比模式间轮换：工作区综合（默认）/仅暂存/仅工作区。
+  - `s`：快捷切“仅暂存”；`w`：快捷切“仅工作区”。
+- 视图：
+  - viewport 默认软换行；`W` 切换换行开关。
+  - `n`/`p`：下/上一处 hunk（基础版可先不实现，预留）。
+- 退出/切换：
+  - `1` 回 Explorer；`2` 回 Diff；`q` 退出 Spec UI。
+
+### 4.4 渲染与降级
+- delta 可用性：启动时探测 `delta --version`；状态展示在状态条中（Enabled/Disabled）。
+- 降级策略：
+  - 无 delta → 使用 `git --no-pager diff --color=always`。
+  - 非 Git 仓库 → 列表为空并在右侧显示提示：“未检测到 Git 仓库”。
+- ANSI 渲染：使用 `x/ansi` + viewport；保留颜色与装饰；限制输出大小（单文件优先）。
+
+### 4.5 稳定性与性能
+- 命令执行：使用 `exec.CommandContext`，每次命令设置超时（默认 10s；可配置）。
+- 并发：列表刷新与 diff 渲染分别在独立 tea.Cmd 内执行，避免 UI 阻塞。
+- 大文件/大 diff：限制单次渲染为“所选文件”，避免一次性全量 diff；必要时截断并提示“输出过长已截断”。
+
+### 4.6 边界与安全
+- 只读：不提供任何写操作；不修改工作区/暂存区。
+- 输出处理：不持久化命令输出，仅在内存；错误信息写入状态条与日志（如复用现有 Logs）。
+
+## 5. 与 Spec 工作流的结合
+- 快捷入口：在 Explorer 页按 `D` 可直接跳转到 Diff 页并自动开启“仅看 `vibe-docs/spec/**`”。
+- 上下文联动：若 Explorer 当前高亮文件为 Spec 文档，切换到 Diff 页后默认选中同路径（若存在变更）。
+
+## 6. 状态保持与恢复
+- 每个标签页独立维护：选择项、滚动位置、过滤开关、对比模式。
+- 在标签切换与窗口尺寸变化时，避免重置状态；必要时仅重排布局。
+
+## 7. Conformance（片段）
+1) 在 Git 仓库内打开 Spec UI，切换到 File Diff，可见分组的改动文件；选择一个 `.mdx` 文件，右侧显示彩色 diff。
+2) 未安装 delta 时，状态条显示 “Delta: Disabled”，但 diff 仍以彩色输出显示。
+3) 打开“仅看 `vibe-docs/spec/**`”过滤后，列表只保留规范目录的改动；切换模式为“仅暂存”时，未暂存文件不显示。
+4) 在 Explorer 高亮 `vibe-docs/spec/400-spec.spec.mdx` 后按 `2` 切换到 Diff，如该文件有改动则自动选中并渲染。
+
+## 8. 实现提示（非规范性）
+- 组件复用：左侧使用现有列表或表格组件；右侧复用 Preview 的 viewport 与 ANSI 渲染管线。
+- 命令封装：为 git/delta 封装 `Run(ctx, args...)` 与 `HasDelta()`，集中处理超时与错误。
+- 键位路由：沿用 `internal/ui` 的消息模式，新增 `MsgTabSwitch`、`MsgDiffData` 等。
+
+## 9. 变更记录
+- 0.1.0：首次草案，定义顶部双标签与 Diff 页最小能力与降级路径。
+
