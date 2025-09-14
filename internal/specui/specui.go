@@ -147,7 +147,11 @@ func initialModel() model {
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(uistyle.Vitesse.Border).
 		BorderBottom(true).
-		Bold(false)
+		Bold(false).
+		Foreground(uistyle.Vitesse.Secondary)
+	ts.Cell = ts.Cell.
+		Foreground(uistyle.Vitesse.Text)
+
 	ts.Selected = ts.Selected.
 		Foreground(uistyle.Vitesse.OnAccent).
 		Background(uistyle.Vitesse.Primary).
@@ -567,9 +571,11 @@ func (m model) View() string {
 		return ""
 	case pageDetail:
 		// choose styles; highlight border of focused pane
-		leftBox := boxStyle
-		rightBox := boxStyle
-		inputBox := boxStyle
+        leftBox := boxStyle
+        rightBox := boxStyle
+        inputBox := boxStyle
+        // For file tree, remove inner horizontal padding so selection can highlight full width
+        leftBox = leftBox.Padding(0, 0)
 		switch m.focus {
 		case focusFiles:
 			leftBox = boxStyleFocus
@@ -578,8 +584,13 @@ func (m model) View() string {
 		case focusInput:
 			inputBox = boxStyleFocus
 		}
-		// top: split left (file manager) and right (markdown)
-		left := leftBox.Render(m.fileTable.View())
+        // top: split left (file manager) and right (markdown)
+        // Fill file tree background to card bg across the inner width
+        ftw := m.fileTable.Width()
+        if ftw <= 0 {
+            ftw = 32
+        }
+        left := leftBox.Render(uistyle.FillBG().Width(ftw).Render(m.fileTable.View()))
 		left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
@@ -686,8 +697,8 @@ func (m *model) recalcViewports() {
 		topH = 3
 	}
 
-	// top split: left (file list) 32 cols, right (markdown) rest
-	innerW := m.width - 2 // borders padding approx
+    // top split: left (file list) 32 cols, right (markdown) rest
+    innerW := m.width - 2 // borders padding approx
 	if innerW < 20 {
 		innerW = m.width
 	}
@@ -702,9 +713,9 @@ func (m *model) recalcViewports() {
 	if rw < 20 {
 		rw = 20
 	}
-	// Adjust for lipgloss border padding by setting slightly smaller dimensions
-	// left (file list) uses table height directly; right is markdown viewport
-	// right also reserves 2 lines for filename header and divider inside the box
+    // Adjust for lipgloss border padding by setting slightly smaller dimensions
+    // left (file list) uses table height directly; right is markdown viewport
+    // right also reserves 2 lines for filename header and divider inside the box
 	mdW, mdH := rw-4, topH-2
 	if mdH > 2 {
 		mdH -= 2
@@ -724,12 +735,25 @@ func (m *model) recalcViewports() {
 	if lgH < 3 {
 		lgH = topH
 	}
-	if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
-		m.mdVP = viewport.New(mdW, mdH)
-	} else {
-		m.mdVP.Width = mdW
-		m.mdVP.Height = mdH
-	}
+    if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
+        m.mdVP = viewport.New(mdW, mdH)
+    } else {
+        m.mdVP.Width = mdW
+        m.mdVP.Height = mdH
+    }
+    // Sync file table column width and viewport width with left pane width so
+    // that selection highlight covers the whole line and truncation is reasonable.
+    colW := lw - 2 // account for left/right borders; left pane padding set to 0
+    if colW < 10 {
+        if lw-2 > 10 {
+            colW = lw - 2
+        } else {
+            colW = 10
+        }
+    }
+    // Only one column: Files
+    m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
+    m.fileTable.SetWidth(colW)
 	// log viewport unused in this layout
 
 	// input width adjust
