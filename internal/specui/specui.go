@@ -589,12 +589,7 @@ func (m model) View() string {
 			inputBox = boxStyleFocus
 		}
         // top: split left (file manager) and right (markdown)
-        // Fill file tree background to card bg across the inner width
-        ftw := m.fileTable.Width()
-        if ftw <= 0 {
-            ftw = 32
-        }
-        left := leftBox.Render(uistyle.FillBG().Width(ftw).Render(m.fileTable.View()))
+        left := leftBox.Render(m.fileTable.View())
 		left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
