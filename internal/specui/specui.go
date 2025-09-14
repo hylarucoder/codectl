@@ -493,6 +493,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tickMsg:
 		m.now = time.Time(msg)
+		// Periodically ensure preview reflects on-disk changes.
+		// If the selected file's modtime/size changed, re-render asynchronously.
+		if m.page == pageDetail && m.selected != nil {
+			path := m.selected.Path
+			width := m.mdVP.Width
+			if width <= 0 {
+				width = 80
+			}
+			if fi, err := os.Stat(path); err == nil {
+				mod := fi.ModTime().Unix()
+				size := fi.Size()
+				var have bool
+				var cached mdEntry
+				if wm, ok := m.mdCache[path]; ok {
+					if e, ok2 := wm[width]; ok2 {
+						cached = e
+						have = true
+					} else {
+						// fallback: any cached width for this path
+						for _, e := range wm {
+							cached = e
+							have = true
+							break
+						}
+					}
+				}
+				if !have || cached.modUnix != mod || cached.size != size {
+					// Kick a render; also keep ticking clock
+					return m, tea.Batch(tickCmd(), renderMarkdownCmd(path, width, m.fastMode))
+				}
+			}
+		}
 		return m, tickCmd()
 	case ptyStartErrMsg:
 		m.logs = append(m.logs, "[pty error] "+msg.Err)
@@ -695,8 +727,8 @@ var (
 			BorderForeground(uistyle.Vitesse.Primary).
 			Background(uistyle.Vitesse.Bg).
 			Padding(0, 1)
-    headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
-	dimStyle = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
+	dimStyle    = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
 )
 
 func (m *model) recalcViewports() {
@@ -743,13 +775,13 @@ func (m *model) recalcViewports() {
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
 	// left (file list) uses table height directly; right is markdown viewport
-    // right also reserves 2 lines for filename header and divider inside the box
-    mdW, mdH := rw-2, topH-2
-    if mdH > 2 {
-        mdH -= 2
-    } else if mdH > 0 {
-        mdH = 1
-    }
+	// right also reserves 2 lines for filename header and divider inside the box
+	mdW, mdH := rw-2, topH-2
+	if mdH > 2 {
+		mdH -= 2
+	} else if mdH > 0 {
+		mdH = 1
+	}
 	lgW, lgH := 0, 0
 	if mdW < 10 {
 		mdW = lw
@@ -769,7 +801,7 @@ func (m *model) recalcViewports() {
 		m.mdVP.Width = mdW
 		m.mdVP.Height = mdH
 	}
-    // viewport Y position left default; header/divider are inside the right pane
+	// viewport Y position left default; header/divider are inside the right pane
 	// Sync file table column width and viewport width with left pane width so
 	// that selection highlight covers the whole line and truncation is reasonable.
 	colW := lw - 2 // account for left/right borders; left pane padding set to 0
