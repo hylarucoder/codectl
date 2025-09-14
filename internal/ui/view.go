@@ -20,10 +20,7 @@ func (m model) View() string {
 	if m.upgrading {
 		// header and tabs
 		var body strings.Builder
-		// top command palette when focused
-		if m.ti.Focused() {
-			body.WriteString(renderCommandPaletteTop(m.width, m.ti.Value(), m.slashFiltered, m.slashIndex))
-		}
+		// Build base body first (no palette here; we'll overlay later)
 		body.WriteString(renderBanner(m.cwd, nil))
 		body.WriteString("\n  codectl — 正在升级 CLI\n\n")
 
@@ -64,26 +61,32 @@ func (m model) View() string {
 		h := m.height
 		if h <= 0 {
 			// fallback when height unknown
-			return zone.Scan(viewBody + bottom)
+			screen := viewBody + bottom
+			// overlay palette last (only when palette is open)
+			if m.paletteOpen {
+				if pal, top := renderPlacedPalette(m); pal != "" {
+					screen = overlayAt(screen, pal, top)
+				}
+			}
+			return zone.Scan(screen)
 		}
 		pad := h - linesUsed - linesBottom
 		if pad < 0 {
 			pad = 0
 		}
-		return zone.Scan(viewBody + strings.Repeat("\n", pad) + bottom)
+		screen := viewBody + strings.Repeat("\n", pad) + bottom
+		// overlay palette last (only when palette is open)
+		if m.paletteOpen {
+			if pal, top := renderPlacedPalette(m); pal != "" {
+				screen = overlayAt(screen, pal, top)
+			}
+		}
+		return zone.Scan(screen)
 	}
 	// Compose body content first; we'll pin status bar at bottom later
 	var body strings.Builder
 	// Single-screen: dash only (remove ASCII banner). Use equal-height rows.
-	paletteLines := 0
-	topPad := 2 // keep two lines breathing room below palette/top
-	if m.ti.Focused() {
-		pal := renderCommandPaletteTop(m.width, m.ti.Value(), m.slashFiltered, m.slashIndex)
-		paletteLines = strings.Count(pal, "\n")
-		body.WriteString(pal)
-	}
-	// visual spacer after palette (or at very top when no palette)
-	body.WriteString("\n\n")
+	topPad := 0 // overlay floats; don't push content
 	// Compute equal row heights.
 	// Reserve space for message block and bottom status bar.
 	msgBlock := 2 // default when no message
@@ -98,7 +101,7 @@ func (m model) View() string {
 	if h <= 0 {
 		h = 24
 	}
-	avail := h - paletteLines - msgBlock - bottomBar - rowSeps - topPad
+	avail := h - msgBlock - bottomBar - rowSeps - topPad
 	if avail < 6 {
 		avail = 6
 	}
@@ -106,8 +109,8 @@ func (m model) View() string {
 	if rowTotal < 3 {
 		rowTotal = 3
 	}
-	// Each card content lines = rowTotal - (title + top + bottom)
-	innerLines := rowTotal - 3
+	// Title is embedded into the top border now, so per card overhead is: top(=title) + bottom = 2
+	innerLines := rowTotal - 2
 	if innerLines < 1 {
 		innerLines = 1
 	}
@@ -129,13 +132,26 @@ func (m model) View() string {
 	linesUsed := strings.Count(viewBody, "\n")
 	linesBottom := strings.Count(bottom, "\n")
 	if h <= 0 {
-		return zone.Scan(viewBody + bottom)
+		screen := viewBody + bottom
+		if m.paletteOpen {
+			if pal, top := renderPlacedPalette(m); pal != "" {
+				screen = overlayAt(screen, pal, top)
+			}
+		}
+		return zone.Scan(screen)
 	}
 	pad := h - linesUsed - linesBottom
 	if pad < 0 {
 		pad = 0
 	}
-	return zone.Scan(viewBody + strings.Repeat("\n", pad) + bottom)
+	screen := viewBody + strings.Repeat("\n", pad) + bottom
+	// overlay palette last (only when palette is open)
+	if m.paletteOpen {
+		if pal, top := renderPlacedPalette(m); pal != "" {
+			screen = overlayAt(screen, pal, top)
+		}
+	}
+	return zone.Scan(screen)
 }
 
 // renderStatusBarLine builds the status bar string (one line plus a newline)
@@ -175,4 +191,92 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// renderPlacedPalette renders the command palette as an overlay positioned
+// roughly at top 1/5 of the screen and using ~3/5 of the terminal width,
+// centered horizontally. It returns the rendered string and the total line
+// count it occupies (including vertical padding).
+func renderPlacedPalette(m model) (string, int) {
+	// Compute overlay outer width (~60% of terminal width), with sane bounds.
+	ow := (m.width * 3) / 5
+	if ow < 20 {
+		if m.width >= 20 {
+			ow = 20
+		} else {
+			ow = m.width // very narrow terminals
+		}
+	}
+	if ow > m.width {
+		ow = m.width
+	}
+	// Vertical offset (line index): ~20% of terminal height.
+	top := m.height / 5
+	if top < 0 {
+		top = 0
+	}
+	// Build the palette box for the target width.
+	pal := renderCommandPaletteTop(ow, m.ti.Value(), m.slashFiltered, m.slashIndex)
+	// Center horizontally by indenting each line with left margin.
+	left := (m.width - ow) / 2
+	if left < 0 {
+		left = 0
+	}
+	pal = indentLines(pal, left)
+	// Ensure overlay lines fully cover the screen width to avoid bleed-through
+	pal = padLinesToWidth(pal, m.width)
+	// Return palette string (indented) and line offset (no vertical padding applied).
+	return pal, top
+}
+
+// indentLines prefixes each line in s with n spaces.
+func indentLines(s string, n int) string {
+	if n <= 0 || s == "" {
+		return s
+	}
+	pad := strings.Repeat(" ", n)
+	// Preserve trailing newline structure by splitting and re-joining.
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		if lines[i] == "" {
+			// still indent to keep left border aligned
+			lines[i] = pad + lines[i]
+			continue
+		}
+		lines[i] = pad + lines[i]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// padLinesToWidth right-pads each line (considering ANSI width) to 'width'.
+func padLinesToWidth(s string, width int) string {
+	if width <= 0 || s == "" {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		w := lipgloss.Width(lines[i])
+		if w < width {
+			lines[i] = lines[i] + strings.Repeat(" ", width-w)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// overlayAt replaces lines in the base screen starting at line index 'top'
+// with the provided overlay lines. It does not change the total line count.
+func overlayAt(screen string, overlay string, top int) string {
+	if overlay == "" || top < 0 {
+		return screen
+	}
+	baseLines := strings.Split(screen, "\n")
+	ovLines := strings.Split(strings.TrimRight(overlay, "\n"), "\n")
+	for i := 0; i < len(ovLines); i++ {
+		idx := top + i
+		if idx < 0 || idx >= len(baseLines) {
+			break
+		}
+		baseLines[idx] = ovLines[i]
+	}
+	return strings.Join(baseLines, "\n")
 }

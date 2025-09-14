@@ -11,14 +11,6 @@ import (
 	"codectl/internal/tools"
 )
 
-func renderDash(m model) string {
-	var b strings.Builder
-	// Default dash uses auto height from content. Prefer renderDashFixed for equal rows.
-	b.WriteString(renderDashGrid(m))
-	b.WriteString("\n")
-	return b.String()
-}
-
 // renderDashFixed enforces equal card heights by fixing the number of inner lines
 // for cards in each row. Use this when you want three rows evenly divided.
 func renderDashFixed(m model, innerLinesPerCard int) string {
@@ -27,38 +19,6 @@ func renderDashFixed(m model, innerLinesPerCard int) string {
 	b.WriteString(renderDashGridFixed(m, innerLinesPerCard))
 	b.WriteString("\n")
 	return b.String()
-}
-
-// renderDashGrid lays out three rows of cards:
-// Row1: 2 columns — [Spec统计] [最近标记完成 spec]
-// Row2: 3 columns — [codex/claude/gemini 状态] [codectl slogan] [正在使用的 model]
-// Row3: 2 columns — [MCP 服务] [空]
-func renderDashGrid(m model) string {
-	W := m.width
-	if W <= 0 {
-		W = 80
-	}
-	gap := 2
-	// Row 1: 2 cols
-	w12 := calcInnerWidths(W, 2, gap)
-	col11 := renderLabeledCard(w12[0], "Spec 统计", linesSpecStats(m))
-	col12 := renderLabeledCard(w12[1], "最近标记完成 spec", linesRecentSpecsTable(w12[1], m))
-	row1 := joinCols([]string{col11, col12}, w12, gap)
-
-	// Row 2: 3 cols
-	w23 := calcInnerWidths(W, 3, gap)
-	col21 := renderLabeledCard(w23[0], "codex / claude / gemini 状态", linesCliStatusTable(w23[0], m))
-	col22 := renderLabeledCard(w23[1], "codectl slogan", linesSlogan())
-	col23 := renderLabeledCard(w23[2], "正在使用的 Model", linesModels(m))
-	row2 := joinCols([]string{col21, col22, col23}, w23, gap)
-
-	// Row 3: 2 cols
-	w32 := calcInnerWidths(W, 2, gap)
-	col31 := renderLabeledCard(w32[0], "MCP 服务", linesMCP(m))
-	col32 := renderLabeledCard(w32[1], "", nil) // empty second column
-	row3 := joinCols([]string{col31, col32}, w32, gap)
-
-	return row1 + "\n" + row2 + "\n" + row3
 }
 
 // renderDashGridFixed is like renderDashGrid but each card is constrained to
@@ -75,21 +35,21 @@ func renderDashGridFixed(m model, innerLines int) string {
 	gap := 2
 	// Row 1: 2 cols
 	w12 := calcInnerWidths(W, 2, gap)
-	col11 := renderLabeledCardFixed(w12[0], "Spec 统计", linesSpecStats(m), innerLines)
-	col12 := renderLabeledCardFixed(w12[1], "最近标记完成 spec", linesRecentSpecsTable(w12[1], m), innerLines)
+	col11 := renderLabeledCardFixed(w12[0], "Spec Stats", linesSpecStats(m), innerLines)
+	col12 := renderLabeledCardFixed(w12[1], "Spec Latest", linesRecentSpecsTable(w12[1], m), innerLines)
 	row1 := joinCols([]string{col11, col12}, w12, gap)
 
 	// Row 2: 3 cols
 	w23 := calcInnerWidths(W, 3, gap)
-	col21 := renderLabeledCardFixed(w23[0], "codex / claude / gemini 状态", linesCliStatusTable(w23[0], m), innerLines)
-	col22 := renderLabeledCardFixed(w23[1], "codectl slogan", linesSlogan(), innerLines)
+	col21 := renderLabeledCardFixed(w23[0], "Cli Coding Agent ", linesCliStatusTable(w23[0], m), innerLines)
+	col22 := renderLabeledCardFixed(w23[1], "Slogan", linesSlogan(), innerLines)
 	col23 := renderLabeledCardFixed(w23[2], "正在使用的 Model", linesModels(m), innerLines)
 	row2 := joinCols([]string{col21, col22, col23}, w23, gap)
 
 	// Row 3: 2 cols
 	w32 := calcInnerWidths(W, 2, gap)
-	col31 := renderLabeledCardFixed(w32[0], "MCP 服务", linesMCP(m), innerLines)
-	col32 := renderLabeledCardFixed(w32[1], "", nil, innerLines) // empty second column
+	col31 := renderLabeledCardFixed(w32[0], "MCP", linesMCP(m), innerLines)
+	col32 := renderLabeledCardFixed(w32[1], "-", nil, innerLines) // empty second column
 	row3 := joinCols([]string{col31, col32}, w32, gap)
 
 	return row1 + "\n" + row2 + "\n" + row3
@@ -127,17 +87,8 @@ func renderLabeledCard(inner int, title string, lines []string) string {
 	if inner < 16 {
 		inner = 16
 	}
-	outer := inner + 2
-	// Title line above box
 	t := strings.TrimSpace(title)
-	if t != "" {
-		tstyled := AccentBold().Render(t)
-		// ANSI-safe width enforcement
-		titleLine := lipgloss.NewStyle().Width(outer).Render(tstyled) + "\n"
-		return titleLine + renderBox(inner, lines)
-	}
-	// No title -> just the box
-	return renderBox(inner, lines)
+	return renderTitledBox(inner, t, lines)
 }
 
 // renderLabeledCardFixed draws a title line above a bordered box, fixing the
@@ -149,16 +100,121 @@ func renderLabeledCardFixed(inner int, title string, lines []string, innerLines 
 	if innerLines < 1 {
 		innerLines = 1
 	}
-	outer := inner + 2
-	// Title line above box
 	t := strings.TrimSpace(title)
-	if t != "" {
-		tstyled := AccentBold().Render(t)
-		titleLine := lipgloss.NewStyle().Width(outer).Render(tstyled) + "\n"
-		return titleLine + renderBoxFixed(inner, lines, innerLines)
+	return renderTitledBoxFixed(inner, t, lines, innerLines)
+}
+
+// renderTitledBox draws a card with the title embedded on the top border.
+func renderTitledBox(inner int, title string, lines []string) string {
+	// Build body (sides + bottom) with lipgloss; top border handled manually with title.
+	body := renderBodyBox(inner, lines, 0)
+	top := renderTopBorderWithTitle(inner, title)
+	return top + "\n" + body
+}
+
+// renderTitledBoxFixed draws a fixed-height content card with title on the top border.
+func renderTitledBoxFixed(inner int, title string, lines []string, innerLines int) string {
+	body := renderBodyBox(inner, lines, innerLines)
+	top := renderTopBorderWithTitle(inner, title)
+	return top + "\n" + body
+}
+
+// renderBodyBox renders a box with no top border (left/right/bottom only).
+// If fixedLines > 0, uses that many content lines; otherwise variable height.
+func renderBodyBox(inner int, lines []string, fixedLines int) string {
+	if inner < 1 {
+		inner = 1
 	}
-	// No title -> just the box
-	return renderBoxFixed(inner, lines, innerLines)
+	padLeft := 2
+	cw := inner - padLeft
+	if cw < 1 {
+		cw = 1
+	}
+	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
+	var content string
+	if fixedLines > 0 {
+		rows := make([]string, fixedLines)
+		for i := 0; i < fixedLines; i++ {
+			var ln string
+			if i < len(lines) {
+				ln = lines[i]
+			}
+			rows[i] = contentStyle.Render(ln)
+		}
+		content = strings.Join(rows, "\n")
+	} else {
+		rows := make([]string, 0, maxInt(1, len(lines)))
+		if len(lines) == 0 {
+			rows = append(rows, contentStyle.Render(""))
+		} else {
+			for _, ln := range lines {
+				rows = append(rows, contentStyle.Render(ln))
+			}
+		}
+		content = strings.Join(rows, "\n")
+	}
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(Vitesse.Border).
+		Background(Vitesse.Bg).
+		BorderTop(false).BorderLeft(true).BorderRight(true).BorderBottom(true).
+		Width(inner)
+	if fixedLines > 0 {
+		card = card.Height(fixedLines)
+	}
+	return card.Render(content)
+}
+
+// renderTopBorderWithTitle composes the top border line with the title embedded.
+func renderTopBorderWithTitle(inner int, title string) string {
+	if inner < 1 {
+		inner = 1
+	}
+	border := BorderStyle()
+	t := strings.TrimSpace(title)
+	// Styled title (no background to blend with border line)
+	tStyled := AccentBold().Render(t)
+	tW := xansi.StringWidth(tStyled)
+	// space before and after title
+	pad := 2
+	// Ensure filler remains >= 1
+	maxTitleW := inner - pad - 1
+	if maxTitleW < 0 {
+		maxTitleW = 0
+	}
+	if tW > maxTitleW {
+		tStyled = clipToWidth(tStyled, maxTitleW)
+		tW = xansi.StringWidth(tStyled)
+	}
+	filler := inner - pad - tW
+	if filler < 1 {
+		filler = 1
+	}
+	left := border.Render("╭")
+	pre := border.Render(" ")
+	post := border.Render(" " + strings.Repeat("─", filler) + "╮")
+	return left + pre + tStyled + post
+}
+
+// clipToWidth trims a string to the given display width (ANSI-safe).
+func clipToWidth(s string, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
+	if xansi.StringWidth(s) <= maxW {
+		return s
+	}
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := xansi.StringWidth(string(r))
+		if w+rw > maxW {
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	return b.String()
 }
 
 // renderBox draws a bordered box with given inner width and content lines.

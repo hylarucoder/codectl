@@ -45,6 +45,8 @@ type model struct {
 	slashFiltered []SlashCmd
 	slashIndex    int
 	notice        string
+	// explicit palette open (Ctrl/Cmd+P); keeps overlay visible even without '/'
+	paletteOpen bool
 
 	// transient status-bar hint
 	hintText  string
@@ -69,13 +71,13 @@ func initialModel() model {
 	ti.Prompt = " > "
 	ti.Placeholder = "Try \"write a test for <filepath>\""
 	ti.CharLimit = 4096
-	ti.Blur() // start blurred; press '/' to focus
+	ti.Blur() // start blurred; use Ctrl/Cmd+P to open palette
 	m.ti = ti
 	// initialize slash suggestions (hidden at start)
 	m.refreshSlash()
 
 	// transient operations hint in status bar (single-screen, no tabs)
-	m.hintText = "操作: Enter 运行诊断 · ⌘⇧P/‘/’ 命令面板 · Esc 取消输入 · Ctrl+C 退出"
+	m.hintText = "操作: Enter 运行诊断 · ⌘P/Ctrl+P 命令面板 · Esc 关闭 · Ctrl+C 退出"
 	m.hintUntil = time.Now().Add(6 * time.Second)
 	// default tab
 	m.activeTab = tabDash

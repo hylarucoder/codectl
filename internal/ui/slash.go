@@ -51,21 +51,29 @@ var slashCmds = []SlashCmd{
 
 func (m *model) refreshSlash() {
 	v := m.ti.Value()
-	// slash visible only when input starts with '/'
-	if !strings.HasPrefix(v, "/") {
+	// Only show palette when explicitly opened via Ctrl/Cmd+P
+	if !m.paletteOpen {
 		m.slashVisible = false
 		m.slashFiltered = nil
 		m.slashIndex = 0
 		return
 	}
-	m.slashVisible = true
-	// filter by prefix token (first word)
 	q := strings.TrimSpace(v)
-	want := q
-	// if there are spaces, only use the first token for filtering
-	if sp := strings.IndexAny(q, " \t"); sp >= 0 {
-		want = q[:sp]
+	// Show all when empty; otherwise fuzzy-match by first token (without requiring '/')
+	if q == "" {
+		m.slashVisible = true
+		m.slashFiltered = slashCmds
+		if m.slashIndex >= len(m.slashFiltered) {
+			m.slashIndex = 0
+		}
+		return
 	}
+	// use only the first token for filtering
+	if sp := strings.IndexAny(q, " \t"); sp >= 0 {
+		q = q[:sp]
+	}
+	want := "/" + q
+	m.slashVisible = true
 	m.slashFiltered = filterSlashCommands(want)
 	if m.slashIndex >= len(m.slashFiltered) {
 		m.slashIndex = 0
@@ -188,7 +196,7 @@ func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
 }
 
 // execSlashLine parses and executes a typed slash command line.
-func (m model) execSlashLine(line string) tea.Cmd {
+func (m model) execSlashLine(line string, quiet bool) tea.Cmd {
 	s := strings.TrimSpace(line)
 	if s == "" || !strings.HasPrefix(s, "/") {
 		return nil
@@ -199,11 +207,11 @@ func (m model) execSlashLine(line string) tea.Cmd {
 	if len(parts) > 1 {
 		args = strings.Join(parts[1:], " ")
 	}
-	return m.execSlashCmd(cmd, args)
+	return m.execSlashCmd(cmd, args, quiet)
 }
 
 // execSlashCmd executes a slash command by name and optional args.
-func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
+func (m model) execSlashCmd(cmd string, args string, quiet bool) tea.Cmd {
 	c := canonicalSlash(cmd)
 	switch c {
 	case "/settings":
@@ -226,9 +234,15 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 	case "/exit", "/quit":
 		return func() tea.Msg { return quitMsg{} }
 	case "/clear", "/reset", "/new":
+		if quiet {
+			return func() tea.Msg { return nil }
+		}
 		return func() tea.Msg { return noticeMsg("已清空会话（占位实现）") }
 	case "/doctor":
-		// Trigger re-check and show notice
+		// Trigger re-check and optionally show notice
+		if quiet {
+			return tea.Batch(checkAllCmd(), configInfoCmd())
+		}
 		return tea.Batch(
 			func() tea.Msg { return noticeMsg("正在运行诊断…") },
 			checkAllCmd(),
@@ -239,7 +253,24 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		sel := selectToolsFromArgString(args)
 		if len(sel) == 0 {
 			return func() tea.Msg {
+				if quiet {
+					return nil
+				}
 				return noticeMsg("未选择任何工具（用法：/add all|codex|claude|gemini...）")
+			}
+		}
+		if quiet {
+			return func() tea.Msg {
+				for _, t := range sel {
+					res := tools.CheckTool(t)
+					if res.Installed {
+						continue
+					}
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+					_ = tools.NpmUpgradeLatest(ctx, t.Package)
+					cancel()
+				}
+				return nil
 			}
 		}
 		return tea.Batch(
@@ -284,7 +315,24 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		sel := selectToolsFromArgString(args)
 		if len(sel) == 0 {
 			return func() tea.Msg {
+				if quiet {
+					return nil
+				}
 				return noticeMsg("未选择任何工具（用法：/remove all|codex|claude|gemini...）")
+			}
+		}
+		if quiet {
+			return func() tea.Msg {
+				for _, t := range sel {
+					res := tools.CheckTool(t)
+					if !res.Installed || strings.TrimSpace(t.Package) == "" {
+						continue
+					}
+					ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+					_ = tools.NpmUninstallGlobal(ctx, t.Package)
+					cancel()
+				}
+				return nil
 			}
 		}
 		return tea.Batch(
@@ -353,9 +401,15 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 				}
 			}
 			if len(parts) == 0 {
+				if quiet {
+					return nil
+				}
 				return noticeMsg("暂无状态")
 			}
 			summary := strings.Join(parts, " · ")
+			if quiet {
+				return nil
+			}
 			return noticeMsg(summary)
 		}
 	case "/upgrade", "/update":
@@ -365,10 +419,19 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		return func() tea.Msg {
 			cfg, err := provider.LoadV2()
 			if err != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("同步失败：%v", err))
 			}
 			if err := provider.SaveV2(cfg); err != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("写入失败：%v", err))
+			}
+			if quiet {
+				return nil
 			}
 			p, _ := provider.Path()
 			total := len(provider.Models())
@@ -380,6 +443,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			defer cancel()
 			gi, _ := system.GetGitInfo(ctx, m.cwd)
 			if !gi.InRepo {
+				if quiet {
+					return nil
+				}
 				return noticeMsg("当前目录不在 Git 仓库内，未进行任何操作")
 			}
 			root, err := system.GitRoot(ctx, m.cwd)
@@ -388,17 +454,32 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			}
 			dir := filepath.Join(root, "vibe-docs")
 			if err := os.MkdirAll(dir, 0o755); err != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("创建目录失败：%v", err))
 			}
 			path := filepath.Join(dir, "AGENTS.md")
 			if _, statErr := os.Stat(path); statErr == nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("已存在：%s", path))
 			} else if !os.IsNotExist(statErr) {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("无法访问 %s：%v", path, statErr))
 			}
 			content := defaultAgentsMD()
 			if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("写入失败：%v", writeErr))
+			}
+			if quiet {
+				return nil
 			}
 			return noticeMsg(fmt.Sprintf("已创建：%s", path))
 		}
@@ -408,6 +489,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			defer cancel()
 			gi, _ := system.GetGitInfo(ctx, m.cwd)
 			if !gi.InRepo {
+				if quiet {
+					return nil
+				}
 				return noticeMsg("当前目录不在 Git 仓库内，未进行任何操作")
 			}
 			root, err := system.GitRoot(ctx, m.cwd)
@@ -416,6 +500,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			}
 			dir := filepath.Join(root, "vibe-docs", "task")
 			if err := os.MkdirAll(dir, 0o755); err != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("创建目录失败：%v", err))
 			}
 			// Use args as task title when provided; build slug
@@ -430,7 +517,13 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			path := filepath.Join(dir, filename)
 			content := defaultTaskMD(title, now)
 			if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr != nil {
+				if quiet {
+					return nil
+				}
 				return noticeMsg(fmt.Sprintf("写入失败：%v", writeErr))
+			}
+			if quiet {
+				return nil
 			}
 			return noticeMsg(fmt.Sprintf("已创建：%s", path))
 		}
@@ -508,6 +601,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			}
 		}
 		if bin == "" {
+			if quiet {
+				return func() tea.Msg { return nil }
+			}
 			return func() tea.Msg { return noticeMsg("未找到 codex CLI（尝试安装 @openai/codex）") }
 		}
 		// Split args (simple, no quotes handling)
@@ -518,7 +614,7 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 		// Create the command and attach current env
 		cmd := exec.Command(bin, argv...)
 		cmd.Env = os.Environ()
-		return tea.ExecProcess(cmd, func(err error) tea.Msg { return codexFinishedMsg{err: err} })
+		return tea.ExecProcess(cmd, func(err error) tea.Msg { return codexFinishedMsg{err: err, quiet: quiet} })
 	case "/specui":
 		// Launch spec UI via child process `codectl spec`
 		bin := ""
@@ -528,10 +624,16 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			bin = p2
 		}
 		if strings.TrimSpace(bin) == "" {
+			if quiet {
+				return func() tea.Msg { return nil }
+			}
 			return func() tea.Msg { return noticeMsg("无法找到 codectl 可执行文件") }
 		}
 		cmd := exec.Command(bin, "spec")
 		cmd.Env = os.Environ()
+		if quiet {
+			return tea.ExecProcess(cmd, func(err error) tea.Msg { return nil })
+		}
 		return tea.ExecProcess(cmd, func(err error) tea.Msg { return noticeMsg("Spec UI 已退出") })
 	default:
 		// not implemented
@@ -546,6 +648,9 @@ func (m model) execSlashCmd(cmd string, args string) tea.Cmd {
 			}
 			if desc == "" {
 				desc = "未实现"
+			}
+			if quiet {
+				return nil
 			}
 			return noticeMsg(fmt.Sprintf("命令 %s：%s (尚未实现)", c, desc))
 		}

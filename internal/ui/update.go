@@ -30,10 +30,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Dash buttons (clickable CTAs)
 			if zone.Get("dash.btn.settings").InBounds(msg) {
-				return m, m.execSlashCmd("/settings", "")
+				return m, m.execSlashCmd("/settings", "", false)
 			}
 			if zone.Get("dash.btn.sync").InBounds(msg) {
-				return m, m.execSlashCmd("/sync", "")
+				return m, m.execSlashCmd("/sync", "", false)
 			}
 			if zone.Get("dash.btn.upgrade").InBounds(msg) {
 				return m, func() tea.Msg { return startUpgradeMsg{} }
@@ -42,7 +42,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在诊断…") }, checkAllCmd(), configInfoCmd())
 			}
 			if zone.Get("dash.btn.specui").InBounds(msg) {
-				return m, m.execSlashCmd("/specui", "")
+				return m, m.execSlashCmd("/specui", "", false)
 			}
 		}
 		return m, nil
@@ -71,7 +71,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.ti.Focused() {
 				m.ti.Focus()
 			}
-			m.ti.SetValue("/")
+			// Explicitly open palette as floating overlay, clear prior input.
+			m.paletteOpen = true
+			m.ti.SetValue("")
+			m.slashIndex = 0
 			m.refreshSlash()
 			return m, nil
 		}
@@ -83,32 +86,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
 			}
 		}
-		// When input is not focused, start typing on any rune/space to auto-focus
-		if !m.ti.Focused() {
-			switch msg.Type {
-			case tea.KeyRunes:
-				m.ti.Focus()
-				m.ti.SetValue(m.ti.Value() + string(msg.Runes))
-				m.refreshSlash()
-				return m, nil
-			case tea.KeySpace:
-				m.ti.Focus()
-				m.ti.SetValue(m.ti.Value() + " ")
-				m.refreshSlash()
-				return m, nil
-			}
-		}
-		// global input focus toggles
-		if msg.String() == "/" && !m.ti.Focused() {
-			m.ti.Focus()
-			// prefill '/'
-			m.ti.SetValue("/")
-			m.refreshSlash()
-			return m, nil
-		}
-		if msg.String() == "esc" && m.ti.Focused() {
+		// Do not auto-focus input or open palette by typing directly.
+		// Palette must be explicitly opened via Ctrl/Cmd+P.
+		if msg.String() == "esc" && (m.ti.Focused() || m.paletteOpen) {
 			m.ti.Blur()
 			m.slashVisible = false
+			m.paletteOpen = false
+			m.ti.SetValue("")
 			return m, nil
 		}
 		// when input focused, handle typing, slash nav, and submit
@@ -158,24 +142,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "exit", "quit":
 					m.ti.SetValue("")
 					m.slashVisible = false
+					m.paletteOpen = false
 					return m, func() tea.Msg { return quitMsg{} }
 				case "settings":
 					m.ti.SetValue("")
 					m.slashVisible = false
-					return m, m.execSlashCmd("/settings", "")
+					m.paletteOpen = false
+					return m, m.execSlashCmd("/settings", "", true)
 				}
 				// execute selection if visible
 				if m.slashVisible && len(m.slashFiltered) > 0 {
 					cmdStr := m.slashFiltered[m.slashIndex].Name
 					m.ti.SetValue("")
 					m.slashVisible = false
-					return m, m.execSlashCmd(cmdStr, "")
+					m.paletteOpen = false
+					return m, m.execSlashCmd(cmdStr, "", true)
 				}
 				// execute typed slash command
 				if strings.HasPrefix(val, "/") {
 					m.ti.SetValue("")
 					m.slashVisible = false
-					return m, m.execSlashLine(val)
+					m.paletteOpen = false
+					return m, m.execSlashLine(val, true)
 				}
 				// empty message: no feedback and do nothing
 				if val == "" {
@@ -307,17 +295,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case codexFinishedMsg:
-		if msg.err != nil {
-			m.notice = fmt.Sprintf("codex 退出（错误）：%v", msg.err)
-		} else {
-			m.notice = "codex 已退出"
+		if !msg.quiet {
+			if msg.err != nil {
+				m.notice = fmt.Sprintf("codex 退出（错误）：%v", msg.err)
+			} else {
+				m.notice = "codex 已退出"
+			}
 		}
 		return m, nil
 	case settingsFinishedMsg:
-		if msg.err != nil {
-			m.notice = fmt.Sprintf("设置退出（错误）：%v", msg.err)
-		} else {
-			m.notice = "设置已关闭"
+		if !msg.quiet {
+			if msg.err != nil {
+				m.notice = fmt.Sprintf("设置退出（错误）：%v", msg.err)
+			} else {
+				m.notice = "设置已关闭"
+			}
 		}
 		return m, nil
 	}
