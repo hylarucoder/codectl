@@ -596,11 +596,9 @@ func (m model) View() string {
         lw := m.leftW
         rw := m.rightW
         // Fixed-width render to avoid jitter when selection changes
-        innerLeft := lw - 2
-        if innerLeft < 1 { innerLeft = 1 }
-        innerRight := rw - 2
-        if innerRight < 1 { innerRight = 1 }
-        left := leftBox.Width(innerLeft).Render(m.fileTable.View())
+        if lw < 3 { lw = 3 }
+        if rw < 3 { rw = 3 }
+        left := leftBox.Width(lw).Render(m.fileTable.View())
         left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
@@ -610,10 +608,9 @@ func (m model) View() string {
 			fname = "(未选择文件)"
 		}
 		// divider under filename sized to preview width; clip long names
-		sepWidth := m.mdVP.Width
-		if sepWidth <= 0 {
-			sepWidth = 80
-		}
+        // divider width equals right pane inner content width (pane - borders)
+        sepWidth := rw - 2
+        if sepWidth <= 0 { sepWidth = 1 }
 		clipW := sepWidth - 2
 		if clipW < 1 {
 			clipW = sepWidth
@@ -628,7 +625,7 @@ func (m model) View() string {
 			divider,
 			m.mdVP.View(),
 		)
-        right := rightBox.Width(innerRight).Render(rightInner)
+        right := rightBox.Width(rw).Render(rightInner)
 		right = zone.Mark("spec.preview", right)
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
@@ -738,7 +735,7 @@ func (m *model) recalcViewports() {
     // Adjust for lipgloss border padding by setting slightly smaller dimensions
     // left (file list) uses table height directly; right is markdown viewport
     // right also reserves 2 lines for filename header and divider inside the box
-	mdW, mdH := rw-4, topH-2
+    mdW, mdH := rw-2, topH-2
 	if mdH > 2 {
 		mdH -= 2
 	} else if mdH > 0 {
