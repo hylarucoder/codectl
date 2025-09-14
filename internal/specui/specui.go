@@ -809,25 +809,24 @@ func vitesseGlamour() ansi.StyleConfig {
 	bg := hex(uistyle.Vitesse.Bg)
 	bgSoft := hex(uistyle.Vitesse.BgSoft)
 
-	return ansi.StyleConfig{
-		Document: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bg)},
-		},
-		Paragraph: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp(text)},
-		},
-		BlockQuote: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp(secondary), Italic: bp(true)},
-		},
-		Heading: ansi.StyleBlock{
-			StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)},
-		},
-		H1: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)}},
-		H2: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)}},
-		H3: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-		H4: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(yellow), Bold: bp(true)}},
-		H5: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(magenta), Bold: bp(true)}},
-		H6: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(secondary)}},
+    return ansi.StyleConfig{
+        Document: ansi.StyleBlock{
+            StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bg)},
+        },
+        Paragraph: ansi.StyleBlock{
+            StylePrimitive: ansi.StylePrimitive{Color: sp(text)},
+        },
+        BlockQuote: ansi.StyleBlock{
+            StylePrimitive: ansi.StylePrimitive{Color: sp(secondary), Italic: bp(true)},
+        },
+        // Markdown headings use theme blue consistently
+        Heading: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H1:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H2:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H3:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H4:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H5:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+        H6:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
 
 		Text:           ansi.StylePrimitive{Color: sp(text)},
 		Emph:           ansi.StylePrimitive{Italic: bp(true)},
