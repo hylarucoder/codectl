@@ -16,7 +16,7 @@ const (
 	tabInstall
 	tabUpdate
 	tabSync
-	tabClean
+    tabClean
 )
 
 func (t tabKind) String() string {
@@ -46,16 +46,16 @@ func renderTabs(width int, active tabKind) string {
 	base := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236")).Padding(0, 1)
 	hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("86")).Padding(0, 1)
 
-	items := []struct {
-		k   tabKind
-		txt string
-	}{
-		{tabDash, "dash"},
-		{tabInstall, "install"},
-		{tabUpdate, "update"},
-		{tabSync, "sync"},
-		{tabClean, "clean"},
-	}
+    items := []struct {
+        k   tabKind
+        txt string
+    }{
+        {tabDash, "dash"},
+        {tabInstall, "install"},
+        {tabUpdate, "update"},
+        {tabSync, "sync"},
+        {tabClean, "clean"},
+    }
 
 	parts := make([]string, 0, len(items))
 	for _, it := range items {

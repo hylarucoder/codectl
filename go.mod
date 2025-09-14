@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.10.2-0.20250911151308-371acd0eaf10
 	github.com/charmbracelet/x/vt v0.0.0-20250911160549-0e720abcae8b
 	github.com/charmbracelet/x/xpty v0.1.3
+	github.com/fsnotify/fsnotify v1.7.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/mattn/go-runewidth v0.0.16

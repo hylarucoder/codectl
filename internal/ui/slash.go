@@ -25,6 +25,7 @@ type SlashCmd struct {
 
 var slashCmds = []SlashCmd{
 	{Name: "/specui", Desc: "Open Spec UI"},
+	{Name: "/work", Desc: "Open Spec/Task tab"},
 	{Name: "/settings", Desc: "Open settings to configure models"},
 	{Name: "/subagent", Desc: "Manage Subagent"},
 	{Name: "/clear", Aliases: []string{"/reset", "/new"}, Desc: "Clear conversation history and free up context"},
@@ -130,6 +131,23 @@ func (m model) execSlashLine(line string, quiet bool) tea.Cmd {
 func (m model) execSlashCmd(cmd string, args string, quiet bool) tea.Cmd {
 	c := canonicalSlash(cmd)
 	switch c {
+    case "/work":
+        // Open Spec UI defaulting to the Work tab
+        bin := ""
+        if p, err := exec.LookPath("codectl"); err == nil && p != "" {
+            bin = p
+        } else if p2, _ := os.Executable(); p2 != "" {
+            bin = p2
+        }
+        if strings.TrimSpace(bin) == "" {
+            if quiet { return func() tea.Msg { return nil } }
+            return func() tea.Msg { return noticeMsg("无法找到 codectl 可执行文件") }
+        }
+        cmd := exec.Command(bin, "spec")
+        // set SPECUI_DEFAULT_TAB=work
+        cmd.Env = append(os.Environ(), "SPECUI_DEFAULT_TAB=work")
+        if quiet { return tea.ExecProcess(cmd, func(err error) tea.Msg { return nil }) }
+        return tea.ExecProcess(cmd, func(err error) tea.Msg { return noticeMsg("Spec UI 已退出") })
 	case "/settings":
 		// Launch the interactive settings form via a child process of this binary
 		return func() tea.Msg {

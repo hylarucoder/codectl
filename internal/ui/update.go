@@ -44,6 +44,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if zone.Get("dash.btn.specui").InBounds(msg) {
 				return m, m.execSlashCmd("/specui", "", false)
 			}
+            if zone.Get("dash.btn.work").InBounds(msg) {
+                // open Spec UI (Spec/Task is the 3rd tab inside)
+                return m, m.execSlashCmd("/specui", "", false)
+            }
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -64,7 +68,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rw = 16
 		}
 		m.ops.SetSize(rw, maxInt(6, m.height-6))
-		return m, nil
+        return m, nil
 	case tea.KeyMsg:
 		// Always allow Ctrl+C to quit, even when input is focused
 		if msg.String() == "ctrl+c" {
@@ -262,9 +266,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noticeMsg:
 		m.notice = string(msg)
 		return m, nil
-	case configInfoMsg:
-		m.config = msg.info
-		return m, nil
+    case configInfoMsg:
+        m.config = msg.info
+        return m, nil
 	case startUpgradeMsg:
 		if m.upgrading {
 			return m, nil

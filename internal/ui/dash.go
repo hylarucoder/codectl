@@ -480,10 +480,11 @@ func linesSpecOverview(inner int, m model) []string {
 		}
 		out = append(out, table...)
 	}
-	// CTA to open Spec UI (if any)
+	// CTA to open Spec UI and Spec/Task tab
 	out = append(out, "")
-	out = append(out, zone.Mark("dash.btn.specui", hlButton("打开 SpecUI"))+AfterButton("  进入规范工作台"))
-	return out
+    out = append(out, zone.Mark("dash.btn.specui", hlButton("打开 SpecUI"))+AfterButton("  进入规范工作台"))
+    out = append(out, zone.Mark("dash.btn.work", hlButton("Spec/Task"))+AfterButton("  在 SpecUI 打开 Work 标签"))
+    return out
 }
 
 // linesConfigOverview merges CLI status table and brief model/MCP lists.

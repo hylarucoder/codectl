@@ -65,6 +65,7 @@ type model struct {
 	// quit confirmation overlay
 	confirmQuit  bool
 	confirmIndex int // 0 = confirm, 1 = cancel
+
 }
 
 func initialModel() model {

@@ -140,8 +140,8 @@ func (m model) View() string {
 		body.WriteString(card)
 		body.WriteString("\n")
 	}
-	// Render dashboard grid only (no external right panel)
-	body.WriteString(renderDashFixed(m, innerLines))
+    // Render dashboard grid only (no external right panel)
+    body.WriteString(renderDashFixed(m, innerLines))
 	body.WriteString("\n")
 
 	// message line just above input: prefer notice (if any), else lastInput

@@ -1,16 +1,17 @@
 package specui
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
-	"unicode/utf8"
+    "context"
+    "fmt"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "regexp"
+    "sort"
+    "strings"
+    "time"
+    "unicode/utf8"
+    "runtime"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -27,17 +28,18 @@ import (
 
 	"codectl/internal/system"
 	uistyle "codectl/internal/ui"
-	zone "github.com/lrstanley/bubblezone"
+    zone "github.com/lrstanley/bubblezone"
+    fsnotify "github.com/fsnotify/fsnotify"
 )
 
 // Start runs the spec UI program
 func Start() error {
-	m := initialModel()
-	// Ensure global zone manager exists (idempotent if already created).
-	zone.NewGlobal()
-	// Disable mouse so users can select and copy freely in terminal
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
-	return err
+    m := initialModel()
+    // Ensure global zone manager exists (idempotent if already created).
+    zone.NewGlobal()
+    // Disable mouse so users can select and copy freely in terminal
+    _, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+    return err
 }
 
 type page int
@@ -118,6 +120,21 @@ type model struct {
 	// file tree change detection
 	treeStamp int64
 	treeCount int
+
+	// fsnotify watcher for live updates
+	watcher *fsnotify.Watcher
+	watchCh chan struct{}
+
+	// Work tab: tasks + filters
+	workTaskTable table.Model
+	workTasks     []taskItem
+	workFiltered  []taskItem
+	workOwnerList []string
+	workOwnerIdx  int
+	workStatus    string // All|backlog|in-progress|blocked|done|draft|accepted
+	workOwner     string // All|<owner>
+    workPriority  string // All|P0|P1|P2
+    workSearch    string
 }
 
 type mdEntry struct {
@@ -157,8 +174,9 @@ const (
 type activeTab int
 
 const (
-	tabExplorer activeTab = iota
-	tabDiff
+    tabExplorer activeTab = iota
+    tabDiff
+    tabWork
 )
 
 // diff compare modes
@@ -171,23 +189,34 @@ const (
 )
 
 type changeItem struct {
-	Path   string
-	Status string // e.g., M/A/D/?? combined short
-	Group  string // Staged / Unstaged / Untracked
+    Path   string
+    Status string // e.g., M/A/D/?? combined short
+    Group  string // Staged / Unstaged / Untracked
 }
 
 type diffRow struct {
-	Header string // non-empty means a header row (group title)
-	Item   *changeItem
-	Text   string
+    Header string // non-empty means a header row (group title)
+    Item   *changeItem
+    Text   string
+}
+
+// work tab task item
+type taskItem struct {
+    Path         string
+    Title        string
+    Status       string
+    Owner        string
+    Priority     string
+    Due          string
+    RelatedSpecs []string
 }
 
 func initialModel() model {
-	wd, _ := os.Getwd()
-	root := wd
-	if r, err := system.GitRoot(context.Background(), wd); err == nil && strings.TrimSpace(r) != "" {
-		root = r
-	}
+    wd, _ := os.Getwd()
+    root := wd
+    if r, err := system.GitRoot(context.Background(), wd); err == nil && strings.TrimSpace(r) != "" {
+        root = r
+    }
 	// build file table (left file manager)
 	ft := table.New(
 		table.WithColumns([]table.Column{{Title: "Files", Width: 32}}),
@@ -236,8 +265,15 @@ func initialModel() model {
 	m.focus = focusFiles
 	m.fileTable.Focus()
 	m.ti.Blur()
-	// default tab: explorer
-	m.tab = tabExplorer
+    // default tab from env (SPECUI_DEFAULT_TAB=explorer|diff|work)
+    switch strings.ToLower(strings.TrimSpace(os.Getenv("SPECUI_DEFAULT_TAB"))) {
+    case "diff":
+        m.tab = tabDiff
+    case "work":
+        m.tab = tabWork
+    default:
+        m.tab = tabExplorer
+    }
 	// init diff table
 	dt := table.New(
 		table.WithColumns([]table.Column{{Title: "Changes", Width: 32}}),
@@ -267,18 +303,51 @@ func initialModel() model {
 		m.gitInRepo = true
 	}
 	m.diffMode = diffAll
-	m.diffFilterSpecOnly = false
+    m.diffFilterSpecOnly = false
 	m.expanded = map[string]bool{}
 	m.expanded[m.fmRoot] = true
 	m.reloadTree()
+	// init Work tab task table and filters
+	m.workTaskTable = table.New(
+		table.WithColumns([]table.Column{
+			{Title: "Task", Width: 36},
+			{Title: "Status", Width: 10},
+			{Title: "Owner", Width: 10},
+			{Title: "Pri", Width: 4},
+			{Title: "Due", Width: 10},
+		}),
+	)
+	ws := table.DefaultStyles()
+	ws.Selected = ws.Selected.
+		Foreground(uistyle.Vitesse.OnAccent).
+		Background(uistyle.Vitesse.Primary)
+	m.workTaskTable.SetStyles(ws)
+	m.workStatus = "All"
+	m.workOwner = "All"
+	m.workPriority = "All"
 	return m
 }
 
-func (m model) Init() tea.Cmd { return tickCmd() }
+func (m model) Init() tea.Cmd { return tea.Batch(tickCmd(), startWatchCmd(m.root)) }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+    switch msg := msg.(type) {
+    case watchStartedMsg:
+        m.watcher = msg.w
+        m.watchCh = msg.ch
+        // subscribe to first event
+        return m, watchSubscribeCmd(m.watchCh)
+    case fileChangedMsg:
+        // refresh tree and diff list; if work tab, reload tasks
+        m.reloadTree()
+        cmds := []tea.Cmd{checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly)}
+        if m.tab == tabWork {
+            cmds = append(cmds, loadTasksCmd(m.root, m.currentSelectedSpec()))
+        }
+        // resubscribe for more events
+        cmds = append(cmds, watchSubscribeCmd(m.watchCh))
+        return m, tea.Batch(cmds...)
+    case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		// update table height (leave some room for header/help)
@@ -305,6 +374,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tab = tabDiff
 				m.setFocus(focusFiles)
 				return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+			}
+			if zone.Get("spec.tab.work").InBounds(msg) {
+				m.tab = tabWork
+				m.setFocus(focusFiles)
+				return m, tea.Batch(loadTasksCmd(m.root, ""))
 			}
 			if zone.Get("spec.input").InBounds(msg) {
 				m.setFocus(focusInput)
@@ -408,10 +482,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = tabDiff
 			m.setFocus(focusFiles)
 			return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+		case "3":
+			m.tab = tabWork
+			m.setFocus(focusFiles)
+			return m, loadTasksCmd(m.root, "")
 		case "tab":
+			// cycle explorer -> diff -> work -> explorer
 			if m.tab == tabExplorer {
 				m.tab = tabDiff
 				return m, tea.Batch(checkDeltaCmd(), refreshDiffListCmd(m.root, m.diffFilterSpecOnly))
+			} else if m.tab == tabDiff {
+				m.tab = tabWork
+				return m, loadTasksCmd(m.root, "")
 			}
 			m.tab = tabExplorer
 			return m, nil
@@ -451,46 +533,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 						}
 						return m, nil
+				} else if m.tab == tabDiff {
+					// Diff tab
+					n := m.diffTable.Cursor()
+					if msg.String() == "j" {
+						n++
 					} else {
-						// Diff tab
-						n := m.diffTable.Cursor()
-						if msg.String() == "j" {
-							n++
-						} else {
-							n--
-						}
-						if n < 0 {
-							n = 0
-						}
-						if n >= len(m.diffItems) {
-							n = len(m.diffItems) - 1
-						}
-						if n >= 0 && n != m.diffTable.Cursor() {
-							m.diffTable.SetCursor(n)
-							if it := m.diffItems[n].Item; it != nil {
-								m.diffVP.SetContent("载入中…")
-								return m, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
-							}
-						}
-						return m, nil
+						n--
 					}
-				}
-				if m.focus == focusPreview {
-					if m.tab == tabExplorer {
-						if msg.String() == "j" {
-							m.mdVP.LineDown(1)
-						} else {
-							m.mdVP.LineUp(1)
-						}
-					} else {
-						if msg.String() == "j" {
-							m.diffVP.LineDown(1)
-						} else {
-							m.diffVP.LineUp(1)
+					if n < 0 {
+						n = 0
+					}
+					if n >= len(m.diffItems) {
+						n = len(m.diffItems) - 1
+					}
+					if n >= 0 && n != m.diffTable.Cursor() {
+						m.diffTable.SetCursor(n)
+						if it := m.diffItems[n].Item; it != nil {
+							m.diffVP.SetContent("载入中…")
+							return m, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta)
 						}
 					}
 					return m, nil
+				} else {
+					// Work tab (right pane is tasks table) — j/k navigate when right focused
+					return m, nil
 				}
+			}
+			if m.focus == focusPreview {
+				if m.tab == tabExplorer {
+					if msg.String() == "j" {
+						m.mdVP.LineDown(1)
+					} else {
+						m.mdVP.LineUp(1)
+					}
+				} else if m.tab == tabDiff {
+					if msg.String() == "j" {
+						m.diffVP.LineDown(1)
+					} else {
+						m.diffVP.LineUp(1)
+					}
+				} else {
+					// Work tab: no scrollable viewport on right
+					return m, nil
+				}
+				return m, nil
+			}
 				return m, nil
 			case "enter":
 				// Only handle Enter for the left pane when it is focused.
@@ -515,16 +603,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.fileTable.SetCursor(idx)
 						return m, nil
 					}
-					// render file
-					it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
-					m.selected = &it
-					m.ti.Reset()
-					m.ti.Blur()
-					m.recalcViewports()
-					m.statusMsg = "按 Esc 返回"
-					m.mdVP.SetContent("渲染中…")
-					return m, renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)
-				}
+                // render file
+                it := specItem{Path: node.Path, Title: filepath.Base(node.Path)}
+                m.selected = &it
+                m.ti.Reset()
+                m.ti.Blur()
+                m.recalcViewports()
+                m.statusMsg = "按 Esc 返回"
+                m.mdVP.SetContent("渲染中…")
+                cmds := []tea.Cmd{renderMarkdownCmd(node.Path, m.mdVP.Width, m.fastMode)}
+                if m.tab == tabWork {
+                    cmds = append(cmds, loadTasksCmd(m.root, m.currentSelectedSpec()))
+                }
+                return m, tea.Batch(cmds...)
+            }
+            if m.tab == tabWork && m.focus == focusPreview && msg.String() == "enter" {
+                idx := m.workTaskTable.Cursor()
+                if idx >= 0 && idx < len(m.workFiltered) {
+                    return m, openInOSCmd(m.workFiltered[idx].Path)
+                }
+                return m, nil
+            }
 				if m.focus == focusFiles && m.tab == tabDiff {
 					// open diff for selected change item
 					if len(m.diffItems) == 0 {
@@ -656,18 +755,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, tea.Batch(cmds...)
-			case "f":
-				// Explorer: toggle fast markdown mode; Diff: toggle spec-only filter
-				if m.tab == tabExplorer {
-					m.fastMode = !m.fastMode
-					if m.selected != nil {
-						m.mdVP.SetContent("渲染中…")
-						return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
-					}
-					return m, nil
-				}
-				m.diffFilterSpecOnly = !m.diffFilterSpecOnly
-				return m, refreshDiffListCmd(m.root, m.diffFilterSpecOnly)
+            case "f":
+                // Explorer: toggle fast markdown mode; Diff: toggle spec-only filter
+                if m.tab == tabExplorer {
+                    m.fastMode = !m.fastMode
+                    if m.selected != nil {
+                        m.mdVP.SetContent("渲染中…")
+                        return m, renderMarkdownCmd(m.selected.Path, m.mdVP.Width, m.fastMode)
+                    }
+                    return m, nil
+                }
+                m.diffFilterSpecOnly = !m.diffFilterSpecOnly
+                return m, refreshDiffListCmd(m.root, m.diffFilterSpecOnly)
+            case "/":
+                if m.tab == tabWork {
+                    m.setFocus(focusInput)
+                    m.ti.Placeholder = "搜索任务…回车提交"
+                    return m, nil
+                }
+            case "s":
+                if m.tab == tabWork {
+                    m.workStatus = cycle([]string{"All","backlog","in-progress","blocked","done","draft","accepted"}, m.workStatus)
+                    m.applyWorkFilter()
+                    return m, nil
+                }
+            case "o":
+                if m.tab == tabWork {
+                    if len(m.workOwnerList) == 0 { m.workOwnerList = []string{"All"} }
+                    m.workOwnerIdx = (m.workOwnerIdx+1) % len(m.workOwnerList)
+                    m.workOwner = m.workOwnerList[m.workOwnerIdx]
+                    m.applyWorkFilter()
+                    return m, nil
+                }
+            case "p":
+                if m.tab == tabWork {
+                    m.workPriority = cycle([]string{"All","P0","P1","P2"}, m.workPriority)
+                    m.applyWorkFilter()
+                    return m, nil
+                }
 			case "right":
 				if m.tab == tabDiff {
 					if m.diffMode == diffWorktree {
@@ -722,14 +847,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmds []tea.Cmd
 			var cmd tea.Cmd
-			// route updates based on focus
-			if m.focus == focusFiles {
-				if m.tab == tabExplorer {
-					prev := m.fileTable.Cursor()
-					m.fileTable, cmd = m.fileTable.Update(msg)
-					cmds = append(cmds, cmd)
-					// When moving selection, auto-open markdown files on the right
-					cur := m.fileTable.Cursor()
+            // route updates based on focus
+            if m.focus == focusFiles {
+                if m.tab == tabExplorer {
+                    prev := m.fileTable.Cursor()
+                    m.fileTable, cmd = m.fileTable.Update(msg)
+                    cmds = append(cmds, cmd)
+                    // When moving selection, auto-open markdown files on the right
+                    cur := m.fileTable.Cursor()
 					if cur != prev && cur >= 0 && cur < len(m.visible) {
 						node := m.visible[cur].Node
 						if !node.IsDir && isMarkdown(node.Path) {
@@ -744,12 +869,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, tea.Batch(cmds...)
 						}
 					}
-				} else {
-					prev := m.diffTable.Cursor()
-					m.diffTable, cmd = m.diffTable.Update(msg)
-					cmds = append(cmds, cmd)
-					cur := m.diffTable.Cursor()
-					if cur != prev && cur >= 0 && cur < len(m.diffItems) {
+                } else if m.tab == tabDiff {
+                    prev := m.diffTable.Cursor()
+                    m.diffTable, cmd = m.diffTable.Update(msg)
+                    cmds = append(cmds, cmd)
+                    cur := m.diffTable.Cursor()
+                    if cur != prev && cur >= 0 && cur < len(m.diffItems) {
 						if it := m.diffItems[cur].Item; it != nil {
 							m.diffVP.SetContent("载入中…")
 							m.diffCurrentFile = it.Path
@@ -759,23 +884,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 							cmds = append(cmds, renderDiffCmd(m.root, it.Path, m.diffMode, m.diffVP.Width, m.hasDelta))
 							return m, tea.Batch(cmds...)
-						}
-					}
+                    }
+                } else {
+                    // Work tab: left is file table as well
+                    prev := m.fileTable.Cursor()
+                    m.fileTable, cmd = m.fileTable.Update(msg)
+                    cmds = append(cmds, cmd)
+                    cur := m.fileTable.Cursor()
+                    if cur != prev {
+                        // selection changed -> re-apply task filter
+                        m.applyWorkFilter()
+                        return m, tea.Batch(cmds...)
+                    }
+                }
 				}
 			}
 			if m.focus == focusInput {
 				m.ti, cmd = m.ti.Update(msg)
 				cmds = append(cmds, cmd)
 			}
-			if m.focus == focusPreview {
-				if m.tab == tabExplorer {
-					m.mdVP, cmd = m.mdVP.Update(msg)
-					cmds = append(cmds, cmd)
-				} else {
-					m.diffVP, cmd = m.diffVP.Update(msg)
-					cmds = append(cmds, cmd)
-				}
-			}
+            if m.focus == focusPreview {
+                if m.tab == tabExplorer {
+                    m.mdVP, cmd = m.mdVP.Update(msg)
+                    cmds = append(cmds, cmd)
+                } else if m.tab == tabDiff {
+                    m.diffVP, cmd = m.diffVP.Update(msg)
+                    cmds = append(cmds, cmd)
+                } else {
+                    m.workTaskTable, cmd = m.workTaskTable.Update(msg)
+                    cmds = append(cmds, cmd)
+                }
+            }
 			return m, tea.Batch(cmds...)
 		}
 	case tickMsg:
@@ -825,13 +964,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Periodically ensure file tree reflects directory entry changes.
-		if m.page == pageDetail && m.treeRoot != nil {
-			newStamp, newCount := m.computeTreeFingerprint()
-			if newStamp != m.treeStamp || newCount != m.treeCount {
-				// try to preserve cursor by path
-				cur := m.fileTable.Cursor()
-				var curPath string
+        // Periodic fallback when fsnotify is unavailable
+        if m.page == pageDetail && m.treeRoot != nil && m.watcher == nil {
+            newStamp, newCount := m.computeTreeFingerprint()
+            if newStamp != m.treeStamp || newCount != m.treeCount {
+                // try to preserve cursor by path
+                cur := m.fileTable.Cursor()
+                var curPath string
 				if cur >= 0 && cur < len(m.visible) {
 					if n := m.visible[cur].Node; n != nil {
 						curPath = n.Path
@@ -846,6 +985,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, tickCmd()
+	case tasksLoadedMsg:
+		m.workTasks = msg.items
+		// owners
+		set := map[string]struct{}{}
+		for _, t := range m.workTasks {
+			if strings.TrimSpace(t.Owner) != "" { set[t.Owner] = struct{}{} }
+		}
+		m.workOwnerList = make([]string, 0, len(set)+1)
+		m.workOwnerList = append(m.workOwnerList, "All")
+		for o := range set { m.workOwnerList = append(m.workOwnerList, o) }
+		sort.Strings(m.workOwnerList[1:])
+		m.workOwnerIdx = 0
+		m.applyWorkFilter()
+		return m, nil
 	case diffListMsg:
 		if msg.Err != "" {
 			m.diffErr = msg.Err
@@ -1015,7 +1168,7 @@ func (m model) View() string {
 			)
 			right = rightBox.Width(rw).Render(rightInner)
 			right = zone.Mark("spec.preview", right)
-		} else {
+		} else if m.tab == tabDiff {
 			// Diff tab
 			left = leftBox.Width(lw).Render(m.diffTable.View())
 			left = zone.Mark("spec.files", left)
@@ -1030,6 +1183,24 @@ func (m model) View() string {
 				headerStyle.Render(title),
 				divider,
 				m.diffVP.View(),
+			)
+			right = rightBox.Width(rw).Render(rightInner)
+			right = zone.Mark("spec.preview", right)
+		} else {
+			// Work tab: left = fileTable; right = tasks table with filter chips
+			left = leftBox.Width(lw).Render(m.fileTable.View())
+			left = zone.Mark("spec.files", left)
+			// title and filter line
+			sepWidth := rw - 2
+			if sepWidth <= 0 { sepWidth = 1 }
+			// build filter chips
+			filter := m.renderWorkFilters()
+			divider := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render(strings.Repeat("─", sepWidth))
+			rightInner := lipgloss.JoinVertical(lipgloss.Left,
+				headerStyle.Render(" Tasks "),
+				filter,
+				divider,
+				m.workTaskTable.View(),
 			)
 			right = rightBox.Width(rw).Render(rightInner)
 			right = zone.Mark("spec.preview", right)
@@ -1169,12 +1340,16 @@ func (m *model) recalcViewports() {
 		m.mdVP.Width = mdW
 		m.mdVP.Height = mdH
 	}
-	if m.diffVP.Width == 0 && m.diffVP.Height == 0 {
-		m.diffVP = viewport.New(mdW, mdH)
-	} else {
-		m.diffVP.Width = mdW
-		m.diffVP.Height = mdH
-	}
+    if m.diffVP.Width == 0 && m.diffVP.Height == 0 {
+        m.diffVP = viewport.New(mdW, mdH)
+    } else {
+        m.diffVP.Width = mdW
+        m.diffVP.Height = mdH
+    }
+    // work tab right table height aligns to mdH
+    if m.workTaskTable.Height() != mdH {
+        m.workTaskTable.SetHeight(mdH)
+    }
 	// viewport Y position left default; header/divider are inside the right pane
 	// Sync file table column width and viewport width with left pane width so
 	// that selection highlight covers the whole line and truncation is reasonable.
@@ -1186,11 +1361,18 @@ func (m *model) recalcViewports() {
 			colW = 10
 		}
 	}
-	// Only one column: Files / Changes
-	m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
-	m.fileTable.SetWidth(colW)
-	m.diffTable.SetColumns([]table.Column{{Title: "Changes", Width: colW}})
-	m.diffTable.SetWidth(colW)
+    // Only one column: Files / Changes
+    m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
+    m.fileTable.SetWidth(colW)
+    m.diffTable.SetColumns([]table.Column{{Title: "Changes", Width: colW}})
+    m.diffTable.SetWidth(colW)
+    // Work tab right table height adjusts implicitly in view; set width hint via columns
+    // Split right pane in half for rough task name width budget
+    half := (rw - 4) / 2
+    if half < 16 { half = 16 }
+    m.workTaskTable.SetColumns([]table.Column{
+        {Title: "Task", Width: half}, {Title: "Status", Width: 10}, {Title: "Owner", Width: 10}, {Title: "Pri", Width: 4}, {Title: "Due", Width: 10},
+    })
 	// log viewport unused in this layout
 
 	// input width adjust
@@ -1952,18 +2134,17 @@ func (m *model) setFocus(f focusArea) {
 	} else {
 		m.ti.Blur()
 	}
-	if f == focusFiles {
-		if m.tab == tabExplorer {
-			m.fileTable.Focus()
-			m.diffTable.Blur()
-		} else {
-			m.diffTable.Focus()
-			m.fileTable.Blur()
-		}
-	} else {
-		m.fileTable.Blur()
-		m.diffTable.Blur()
-	}
+    if f == focusFiles {
+        if m.tab == tabExplorer {
+            m.fileTable.Focus(); m.diffTable.Blur()
+        } else if m.tab == tabDiff {
+            m.diffTable.Focus(); m.fileTable.Blur()
+        } else {
+            m.fileTable.Focus(); m.diffTable.Blur()
+        }
+    } else {
+        m.fileTable.Blur(); m.diffTable.Blur()
+    }
 }
 
 // parseFrontmatterTitle extracts `title:` from the first frontmatter block
@@ -2024,44 +2205,49 @@ func (m model) renderWorkbar() string {
 		left = append(left, label)
 		left = append(left, "↑/↓ 选择")
 		left = append(left, "Enter 打开")
-	} else {
-		if m.tab == tabExplorer {
-			if m.selected != nil {
-				left = append(left, filepath.Base(m.selected.Path))
-			} else {
-				left = append(left, "No file selected")
-			}
-			left = append(left, "↵ 记录")
-			left = append(left, "! 执行")
-			left = append(left, "r 载入")
-			left = append(left, "f 快速")
-			left = append(left, "Esc 返回")
-		} else {
-			left = append(left, "File Diff")
-			left = append(left, fmt.Sprintf("模式:%s", diffModeLabel(m.diffMode)))
-			if m.diffFilterSpecOnly {
-				left = append(left, "过滤:spec/开")
-			} else {
-				left = append(left, "过滤:关")
-			}
-			left = append(left, "r 刷新")
-			left = append(left, "f 过滤")
-			left = append(left, "←/→ 模式")
-		}
-	}
+    } else {
+        if m.tab == tabExplorer {
+            if m.selected != nil {
+                left = append(left, filepath.Base(m.selected.Path))
+            } else {
+                left = append(left, "No file selected")
+            }
+            left = append(left, "↵ 记录")
+            left = append(left, "! 执行")
+            left = append(left, "r 载入")
+            left = append(left, "f 快速")
+            left = append(left, "Esc 返回")
+        } else if m.tab == tabDiff {
+            left = append(left, "File Diff")
+            left = append(left, fmt.Sprintf("模式:%s", diffModeLabel(m.diffMode)))
+            if m.diffFilterSpecOnly {
+                left = append(left, "过滤:spec/开")
+            } else {
+                left = append(left, "过滤:关")
+            }
+            left = append(left, "r 刷新")
+            left = append(left, "f 过滤")
+            left = append(left, "←/→ 模式")
+        } else {
+            left = append(left, "Spec • Task")
+            left = append(left, "S 状态 O 所有人 P 优先级")
+        }
+    }
 	// right segments
 	right := []string{}
-	if m.page == pageDetail {
-		if m.tab == tabExplorer {
-			if m.fastMode {
-				right = append(right, "快速:开")
-			} else {
-				right = append(right, "快速:关")
-			}
-		} else {
-			right = append(right, fmt.Sprintf("Delta:%s", onOff(m.hasDelta)))
-		}
-	}
+    if m.page == pageDetail {
+        if m.tab == tabExplorer {
+            if m.fastMode {
+                right = append(right, "快速:开")
+            } else {
+                right = append(right, "快速:关")
+            }
+        } else if m.tab == tabDiff {
+            right = append(right, fmt.Sprintf("Delta:%s", onOff(m.hasDelta)))
+        } else {
+            right = append(right, time.Now().Format(""))
+        }
+    }
 	if !m.now.IsZero() {
 		right = append(right, m.now.Format("15:04"))
 	} else {
@@ -2071,7 +2257,7 @@ func (m model) renderWorkbar() string {
 }
 
 func (m model) renderTabs() string {
-	// simple two-tab bar
+	// three-tab bar
 	active := lipgloss.NewStyle().Bold(true).
 		Foreground(uistyle.Vitesse.OnAccent).
 		Background(uistyle.Vitesse.Primary).
@@ -2080,20 +2266,263 @@ func (m model) renderTabs() string {
 		Foreground(uistyle.Vitesse.Secondary).
 		Background(uistyle.Vitesse.Bg)
 	sep := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render("│")
-	var exp, dif string
-	if m.tab == tabExplorer {
+	var exp, dif, work string
+	switch m.tab {
+	case tabExplorer:
 		exp = active.Render("1 File Explorer")
 		dif = inactive.Render(" 2 File Diff ")
-	} else {
+		work = inactive.Render(" 3 Spec • Task ")
+	case tabDiff:
 		exp = inactive.Render(" 1 File Explorer ")
 		dif = active.Render("2 File Diff")
+		work = inactive.Render(" 3 Spec • Task ")
+	default:
+		exp = inactive.Render(" 1 File Explorer ")
+		dif = inactive.Render(" 2 File Diff ")
+		work = active.Render("3 Spec • Task")
 	}
 	// mark zones for click
 	exp = zone.Mark("spec.tab.explorer", exp)
 	dif = zone.Mark("spec.tab.diff", dif)
-	line := exp + sep + dif
+	work = zone.Mark("spec.tab.work", work)
+	line := exp + sep + dif + sep + work
 	// extend to full width with background
 	return lipgloss.NewStyle().Background(uistyle.Vitesse.Bg).Width(m.width).Render(line)
+}
+
+// tiny helpers
+func cycle(arr []string, cur string) string {
+    if len(arr) == 0 { return cur }
+    idx := 0
+    for i, v := range arr { if strings.EqualFold(v, cur) { idx = i; break } }
+    return arr[(idx+1)%len(arr)]
+}
+
+// parse frontmatter helpers (quick & lenient)
+func parseFMQuick(path string) map[string]string {
+    b, err := os.ReadFile(path)
+    if err != nil { return map[string]string{} }
+    s := string(b)
+    lines := strings.Split(s, "\n")
+    if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" { return map[string]string{} }
+    end := -1
+    for i := 1; i < len(lines); i++ { if strings.TrimRight(lines[i], "\r") == "---" { end = i; break } }
+    if end < 0 { return map[string]string{} }
+    out := map[string]string{}
+    for _, ln := range lines[1:end] {
+        l := strings.TrimSpace(ln)
+        if l == "" || strings.HasPrefix(l, "#") { continue }
+        if strings.HasSuffix(l, ":") { continue }
+        if i := strings.Index(l, ":"); i >= 0 {
+            k := strings.ToLower(strings.TrimSpace(l[:i]))
+            v := strings.TrimSpace(l[i+1:])
+            if len(v) >= 2 {
+                if (v[0] == '\'' && v[len(v)-1] == '\'') || (v[0] == '"' && v[len(v)-1] == '"') { v = v[1:len(v)-1] }
+            }
+            out[k] = v
+        }
+    }
+    return out
+}
+
+func parseFMArray(path, key string) []string {
+    b, err := os.ReadFile(path)
+    if err != nil { return nil }
+    s := string(b)
+    lines := strings.Split(s, "\n")
+    if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" { return nil }
+    end := -1
+    for i := 1; i < len(lines); i++ { if strings.TrimRight(lines[i], "\r") == "---" { end = i; break } }
+    if end < 0 { return nil }
+    lk := strings.ToLower(strings.TrimSpace(key))
+    var res []string
+    for i := 1; i < end; i++ {
+        l := strings.TrimSpace(lines[i])
+        if strings.HasPrefix(strings.ToLower(l), lk+":") {
+            v := strings.TrimSpace(l[len(lk)+1:])
+            if strings.HasPrefix(v, "[") && strings.HasSuffix(v, "]") {
+                v = strings.TrimSuffix(strings.TrimPrefix(v, "["), "]")
+                parts := strings.Split(v, ",")
+                for _, p := range parts { pp := strings.Trim(strings.TrimSpace(p), "\"'"); if pp != "" { res = append(res, pp) } }
+                return res
+            }
+            for j := i+1; j < end; j++ {
+                ln := lines[j]
+                t := strings.TrimSpace(ln)
+                if !strings.HasPrefix(ln, " ") && !strings.HasPrefix(ln, "\t") { break }
+                if strings.HasPrefix(t, "- ") { vv := strings.Trim(strings.TrimPrefix(t, "- "), "\"'"); if vv != "" { res = append(res, vv) } }
+            }
+            return res
+        }
+    }
+    return res
+}
+
+func scanTasks(dir string) []taskItem {
+    entries, _ := filepath.Glob(filepath.Join(dir, "*.task.mdx"))
+    if len(entries) == 0 { return nil }
+    out := make([]taskItem, 0, len(entries))
+    for _, p := range entries {
+        fm := parseFMQuick(p)
+        t := strings.TrimSpace(fm["title"])
+        if t == "" { t = filepath.Base(p) }
+        out = append(out, taskItem{
+            Path: p,
+            Title: t,
+            Status: strings.TrimSpace(fm["status"]),
+            Owner: strings.TrimSpace(fm["owner"]),
+            Priority: strings.ToUpper(strings.TrimSpace(fm["priority"])),
+            Due: strings.TrimSpace(fm["due"]),
+            RelatedSpecs: parseFMArray(p, "relatedspec"),
+        })
+    }
+    // newest first by filename
+    sort.SliceStable(out, func(i,j int) bool { return out[i].Path > out[j].Path })
+    return out
+}
+
+func containsPath(arr []string, want string) bool {
+    w := filepath.ToSlash(want)
+    for _, s := range arr { if filepath.ToSlash(s) == w { return true } }
+    return false
+}
+
+// openInOSCmd opens a file via OS default handler
+func openInOSCmd(path string) tea.Cmd {
+    return func() tea.Msg {
+        exe := ""
+        args := []string{}
+        switch runtime.GOOS {
+        case "darwin":
+            exe = "open"
+            args = []string{path}
+        case "linux":
+            exe = "xdg-open"
+            args = []string{path}
+        case "windows":
+            exe = "cmd"
+            args = []string{"/c", "start", "", path}
+        default:
+            // fallback: no-op
+            return nil
+        }
+        cmd := exec.Command(exe, args...)
+        cmd.Env = os.Environ()
+        _ = cmd.Start()
+        return nil
+    }
+}
+
+// ---------- fsnotify integration ----------
+
+type watchStartedMsg struct{ w *fsnotify.Watcher; ch chan struct{} }
+type fileChangedMsg struct{}
+
+func startWatchCmd(root string) tea.Cmd {
+    return func() tea.Msg {
+        w, err := fsnotify.NewWatcher()
+        if err != nil { return nil }
+        // watch vibe-docs and subdirs (spec, task) best-effort
+        _ = w.Add(filepath.Join(root, "vibe-docs"))
+        _ = w.Add(filepath.Join(root, "vibe-docs", "spec"))
+        _ = w.Add(filepath.Join(root, "vibe-docs", "task"))
+        ch := make(chan struct{}, 1)
+        go func() {
+            for {
+                select {
+                case _, ok := <-w.Events:
+                    if !ok { return }
+                    select { case ch <- struct{}{}: default: }
+                case _, ok := <-w.Errors:
+                    if !ok { return }
+                }
+            }
+        }()
+        return watchStartedMsg{w: w, ch: ch}
+    }
+}
+
+func watchSubscribeCmd(ch <-chan struct{}) tea.Cmd {
+    return func() tea.Msg {
+        if ch == nil { return nil }
+        <-ch
+        time.Sleep(120 * time.Millisecond)
+        return fileChangedMsg{}
+    }
+}
+
+// ---------- work tab: tasks + filters ----------
+
+type tasksLoadedMsg struct{ items []taskItem }
+
+func loadTasksCmd(root, selectedSpec string) tea.Cmd {
+    return func() tea.Msg {
+        dir := filepath.Join(root, "vibe-docs", "task")
+        items := scanTasks(dir)
+        // no filtering here; we filter in Update based on current selection
+        return tasksLoadedMsg{items: items}
+    }
+}
+
+func (m *model) applyWorkFilter() {
+    sel := m.currentSelectedSpec()
+    out := make([]taskItem, 0, len(m.workTasks))
+    for _, t := range m.workTasks {
+        if sel != "" && !containsPath(t.RelatedSpecs, sel) { continue }
+        if m.workStatus != "All" && !strings.EqualFold(t.Status, m.workStatus) { continue }
+        if m.workOwner != "All" && !strings.EqualFold(t.Owner, m.workOwner) { continue }
+        if m.workPriority != "All" && !strings.EqualFold(t.Priority, m.workPriority) { continue }
+        if s := strings.TrimSpace(m.workSearch); s != "" {
+            ls := strings.ToLower(s)
+            if !strings.Contains(strings.ToLower(t.Title), ls) && !strings.Contains(strings.ToLower(filepath.Base(t.Path)), ls) {
+                continue
+            }
+        }
+        out = append(out, t)
+    }
+    m.workFiltered = out
+    // rows
+    rows := make([]table.Row, 0, len(out))
+    for _, t := range out {
+        rows = append(rows, table.Row{t.Title, t.Status, t.Owner, t.Priority, t.Due})
+    }
+    m.workTaskTable.SetRows(rows)
+}
+
+func (m model) currentSelectedSpec() string {
+    if m.focus == focusFiles || true {
+        // derive from file table selection
+        idx := m.fileTable.Cursor()
+        if idx >= 0 && idx < len(m.visible) {
+            node := m.visible[idx].Node
+            if node != nil && !node.IsDir {
+                // ensure under vibe-docs/spec
+                rel := filepath.ToSlash(relFrom(m.root, node.Path))
+                if strings.HasPrefix(rel, "vibe-docs/spec/") {
+                    return node.Path
+                }
+            }
+        }
+    }
+    return ""
+}
+
+func (m model) renderWorkFilters() string {
+    // chips with current filters; simple text line
+    chip := func(txt string) string { return lipgloss.NewStyle().Foreground(uistyle.Vitesse.OnAccent).Background(uistyle.Vitesse.Blue).Padding(0,1).Render(txt) }
+    parts := []string{"Spec:", chip(baseOr(m.currentSelectedSpec())),
+        " Status:", chip(m.workStatus),
+        " Owner:", chip(m.workOwner),
+        " Pri:", chip(m.workPriority),}
+    if s := strings.TrimSpace(m.workSearch); s != "" {
+        parts = append(parts, " Search:", chip(s))
+    }
+    return lipgloss.NewStyle().Background(uistyle.Vitesse.Bg).Render(strings.Join(parts, " "))
+}
+
+func baseOr(p string) string {
+    if strings.TrimSpace(p) == "" { return "All" }
+    return filepath.Base(p)
 }
 
 func diffModeLabel(mo diffMode) string {
