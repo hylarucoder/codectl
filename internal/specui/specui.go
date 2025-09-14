@@ -581,8 +581,9 @@ func (m model) View() string {
         leftBox := boxStyle
         rightBox := boxStyle
         inputBox := boxStyle
-        // For file tree, remove inner horizontal padding so selection can highlight full width
+        // Remove inner horizontal padding on both panes so width is stable regardless of focus
         leftBox = leftBox.Padding(0, 0)
+        rightBox = rightBox.Padding(0, 0)
 		switch m.focus {
 		case focusFiles:
 			leftBox = boxStyleFocus
