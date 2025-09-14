@@ -98,6 +98,9 @@ type model struct {
 	// focus management
 	focus        focusArea
 	lastTopFocus focusArea
+	// file tree change detection
+	treeStamp int64
+	treeCount int
 }
 
 type mdEntry struct {
@@ -522,6 +525,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !have || cached.modUnix != mod || cached.size != size {
 					// Kick a render; also keep ticking clock
 					return m, tea.Batch(tickCmd(), renderMarkdownCmd(path, width, m.fastMode))
+				}
+			}
+		}
+		// Periodically ensure file tree reflects directory entry changes.
+		if m.page == pageDetail && m.treeRoot != nil {
+			newStamp, newCount := m.computeTreeFingerprint()
+			if newStamp != m.treeStamp || newCount != m.treeCount {
+				// try to preserve cursor by path
+				cur := m.fileTable.Cursor()
+				var curPath string
+				if cur >= 0 && cur < len(m.visible) {
+					if n := m.visible[cur].Node; n != nil {
+						curPath = n.Path
+					}
+				}
+				m.reloadTree()
+				if curPath != "" {
+					if idx := m.findVisibleIndexByPath(curPath); idx >= 0 {
+						m.fileTable.SetCursor(idx)
+					}
 				}
 			}
 		}
@@ -1271,6 +1294,8 @@ func (m *model) reloadTree() {
 	m.treeRoot = m.buildTree(m.fmRoot, nil)
 	m.visible = m.buildVisible()
 	m.fileTable.SetRows(m.visibleRows())
+	// after rebuilding, compute new fingerprint for change detection
+	m.treeStamp, m.treeCount = m.computeTreeFingerprint()
 }
 
 func (m *model) buildTree(dir string, parent *treeNode) *treeNode {
@@ -1351,6 +1376,60 @@ func (m *model) visibleRows() []table.Row {
 		rows = append(rows, table.Row{r.Text})
 	}
 	return rows
+}
+
+// computeTreeFingerprint returns a lightweight snapshot of the current
+// visible tree state: the maximum directory mtime among visible directories
+// (root + expanded directories) and the total child-entry count across those
+// directories. It avoids deep recursion into collapsed folders.
+func (m *model) computeTreeFingerprint() (int64, int) {
+	if m.treeRoot == nil {
+		// fallback to root dir only
+		fi, err := os.Stat(m.fmRoot)
+		if err != nil || fi == nil {
+			return 0, 0
+		}
+		entries, _ := os.ReadDir(m.fmRoot)
+		return fi.ModTime().Unix(), len(entries)
+	}
+	var maxMod int64
+	total := 0
+	var walk func(n *treeNode)
+	walk = func(n *treeNode) {
+		if n == nil || !n.IsDir {
+			return
+		}
+		// consider this dir if it's root or expanded
+		consider := n == m.treeRoot || m.expanded[n.Path]
+		if consider {
+			if fi, err := os.Stat(n.Path); err == nil && fi != nil {
+				if ts := fi.ModTime().Unix(); ts > maxMod {
+					maxMod = ts
+				}
+			}
+			total += len(n.Children)
+		}
+		// recurse only into expanded nodes to avoid deep cost
+		if m.expanded[n.Path] {
+			for _, ch := range n.Children {
+				if ch.IsDir {
+					walk(ch)
+				}
+			}
+		}
+	}
+	walk(m.treeRoot)
+	return maxMod, total
+}
+
+// findVisibleIndexByPath finds the row index of a node path in visible list.
+func (m *model) findVisibleIndexByPath(path string) int {
+	for i, r := range m.visible {
+		if r.Node != nil && r.Node.Path == path {
+			return i
+		}
+	}
+	return -1
 }
 
 // setFocus updates UI focus across panes and applies component focus state.
