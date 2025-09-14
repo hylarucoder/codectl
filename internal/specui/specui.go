@@ -607,7 +607,7 @@ func (m model) View() string {
 		}
 		left := leftBox.Width(lw).Render(m.fileTable.View())
 		left = zone.Mark("spec.files", left)
-		// right: header with filename + markdown viewport
+		// right: header with filename + divider + markdown viewport
 		var fname string
 		if m.selected != nil {
 			fname = relFrom(m.root, m.selected.Path)
@@ -695,8 +695,8 @@ var (
 			BorderForeground(uistyle.Vitesse.Primary).
 			Background(uistyle.Vitesse.Bg).
 			Padding(0, 1)
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
-	dimStyle    = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
+    headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
+	dimStyle = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
 )
 
 func (m *model) recalcViewports() {
@@ -743,13 +743,13 @@ func (m *model) recalcViewports() {
 	}
 	// Adjust for lipgloss border padding by setting slightly smaller dimensions
 	// left (file list) uses table height directly; right is markdown viewport
-	// right also reserves 2 lines for filename header and divider inside the box
-	mdW, mdH := rw-2, topH-2
-	if mdH > 2 {
-		mdH -= 2
-	} else if mdH > 0 {
-		mdH = 1
-	}
+    // right also reserves 2 lines for filename header and divider inside the box
+    mdW, mdH := rw-2, topH-2
+    if mdH > 2 {
+        mdH -= 2
+    } else if mdH > 0 {
+        mdH = 1
+    }
 	lgW, lgH := 0, 0
 	if mdW < 10 {
 		mdW = lw
@@ -769,6 +769,7 @@ func (m *model) recalcViewports() {
 		m.mdVP.Width = mdW
 		m.mdVP.Height = mdH
 	}
+    // viewport Y position left default; header/divider are inside the right pane
 	// Sync file table column width and viewport width with left pane width so
 	// that selection highlight covers the whole line and truncation is reasonable.
 	colW := lw - 2 // account for left/right borders; left pane padding set to 0
