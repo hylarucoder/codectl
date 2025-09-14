@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -57,6 +58,13 @@ type model struct {
 
 	// config info (for dash)
 	config ConfigInfo
+
+	// right-side operations panel (grouped list)
+	ops list.Model
+
+	// quit confirmation overlay
+	confirmQuit  bool
+	confirmIndex int // 0 = confirm, 1 = cancel
 }
 
 func initialModel() model {
@@ -76,8 +84,11 @@ func initialModel() model {
 	// initialize slash suggestions (hidden at start)
 	m.refreshSlash()
 
+	// operations panel list
+	m.ops = newOpsList()
+
 	// transient operations hint in status bar (single-screen, no tabs)
-	m.hintText = "操作: Enter 运行诊断 · ⌘P/Ctrl+P 命令面板 · Esc 关闭 · Ctrl+C 退出"
+	m.hintText = "操作: Enter 执行右侧操作 · ⌘P/Ctrl+P 命令面板 · Esc 关闭 · Ctrl+C 退出"
 	m.hintUntil = time.Now().Add(6 * time.Second)
 	// default tab
 	m.activeTab = tabDash

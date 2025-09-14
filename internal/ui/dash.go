@@ -15,16 +15,15 @@ import (
 // for cards in each row. Use this when you want three rows evenly divided.
 func renderDashFixed(m model, innerLinesPerCard int) string {
 	var b strings.Builder
-	// Grid cards (homepage dashboard)
-	b.WriteString(renderDashGridFixed(m, innerLinesPerCard))
+	// Grid cards (homepage dashboard) — 3-column layout
+	b.WriteString(renderDashThreeColsFixed(m, innerLinesPerCard))
 	b.WriteString("\n")
 	return b.String()
 }
 
-// renderDashGridFixed is like renderDashGrid but each card is constrained to
-// exactly innerLines lines in its content area (between top/bottom borders),
-// ensuring equal heights across columns and rows.
-func renderDashGridFixed(m model, innerLines int) string {
+// renderDashThreeColsFixed renders a single row with 3 equal-height cards.
+// Each card content area is fixed to innerLines lines.
+func renderDashThreeColsFixed(m model, innerLines int) string {
 	if innerLines < 1 {
 		innerLines = 1
 	}
@@ -33,26 +32,15 @@ func renderDashGridFixed(m model, innerLines int) string {
 		W = 80
 	}
 	gap := 2
-	// Row 1: 2 cols
-	w12 := calcInnerWidths(W, 2, gap)
-	col11 := renderLabeledCardFixed(w12[0], "Spec Stats", linesSpecStats(m), innerLines)
-	col12 := renderLabeledCardFixed(w12[1], "Spec Latest", linesRecentSpecsTable(w12[1], m), innerLines)
-	row1 := joinCols([]string{col11, col12}, w12, gap)
-
-	// Row 2: 3 cols
-	w23 := calcInnerWidths(W, 3, gap)
-	col21 := renderLabeledCardFixed(w23[0], "Cli Coding Agent ", linesCliStatusTable(w23[0], m), innerLines)
-	col22 := renderLabeledCardFixed(w23[1], "Slogan", linesSlogan(), innerLines)
-	col23 := renderLabeledCardFixed(w23[2], "正在使用的 Model", linesModels(m), innerLines)
-	row2 := joinCols([]string{col21, col22, col23}, w23, gap)
-
-	// Row 3: 2 cols
-	w32 := calcInnerWidths(W, 2, gap)
-	col31 := renderLabeledCardFixed(w32[0], "MCP", linesMCP(m), innerLines)
-	col32 := renderLabeledCardFixed(w32[1], "-", nil, innerLines) // empty second column
-	row3 := joinCols([]string{col31, col32}, w32, gap)
-
-	return row1 + "\n" + row2 + "\n" + row3
+	w := calcInnerWidths(W, 3, gap)
+	// Column 1: Spec/Task view (stats + recent accepted)
+	col1 := renderLabeledCardFixed(w[0], "Spec · Tasks", linesSpecOverview(w[0], m), innerLines)
+	// Column 2: Config overview (CLI + Models + MCP)
+	col2 := renderLabeledCardFixed(w[1], "配置总览", linesConfigOverview(w[1], m), innerLines)
+	// Column 3: Operations list (flattened actions)
+	// Hide the embedded colored title for this card by passing an empty title
+	col3 := renderLabeledCardFixed(w[2], "", linesOpsEmbedded(w[2], innerLines, m), innerLines)
+	return joinCols([]string{col1, col2, col3}, w, gap)
 }
 
 // calcInnerWidths computes inner content widths (excluding the 2 border characters) for n columns.
@@ -172,13 +160,17 @@ func renderTopBorderWithTitle(inner int, title string) string {
 	}
 	border := BorderStyle()
 	t := strings.TrimSpace(title)
+	// If title is empty, render a plain top border without an embedded title.
+	if t == "" {
+		return border.Render("╭" + strings.Repeat("─", inner) + "╮")
+	}
 	// Styled title (no background to blend with border line)
 	tStyled := AccentBold().Render(t)
 	tW := xansi.StringWidth(tStyled)
-	// space before and after title
-	pad := 2
-	// Ensure filler remains >= 1
-	maxTitleW := inner - pad - 1
+	// Draw at least one dash before the title to make the header obvious.
+	leftFill := 1
+	// Max title width considering: left dashes + space + title + space + right dashes = inner
+	maxTitleW := inner - leftFill - 2
 	if maxTitleW < 0 {
 		maxTitleW = 0
 	}
@@ -186,13 +178,13 @@ func renderTopBorderWithTitle(inner int, title string) string {
 		tStyled = clipToWidth(tStyled, maxTitleW)
 		tW = xansi.StringWidth(tStyled)
 	}
-	filler := inner - pad - tW
-	if filler < 1 {
-		filler = 1
+	rightFill := inner - leftFill - tW - 2
+	if rightFill < 1 {
+		rightFill = 1
 	}
 	left := border.Render("╭")
-	pre := border.Render(" ")
-	post := border.Render(" " + strings.Repeat("─", filler) + "╮")
+	pre := border.Render(strings.Repeat("─", leftFill) + " ")
+	post := border.Render(" " + strings.Repeat("─", rightFill) + "╮")
 	return left + pre + tStyled + post
 }
 
@@ -420,7 +412,7 @@ func linesCliStatus(m model) []string {
 	}
 	// CTA line
 	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
-	lines = append(lines, "", btn+"  统一升级 CLI")
+	lines = append(lines, "", btn+AfterButton("  统一升级 CLI"))
 	return lines
 }
 
@@ -456,7 +448,77 @@ func linesCliStatusTable(inner int, m model) []string {
 	out := renderTable(cw, headers, rows)
 	// Append CTA line
 	btn := zone.Mark("dash.btn.upgrade", hlButton("Upgrade All"))
-	out = append(out, "", btn+"  统一升级 CLI")
+	out = append(out, "", btn+AfterButton("  统一升级 CLI"))
+	return out
+}
+
+// linesSpecOverview combines spec stats and a small recent table.
+func linesSpecOverview(inner int, m model) []string {
+	out := make([]string, 0, 64)
+	// Stats
+	stats := linesSpecStats(m)
+	if len(stats) > 0 {
+		out = append(out, stats...)
+	}
+	// Recent accepted table
+	table := linesRecentSpecsTable(inner, m)
+	if len(table) > 0 {
+		if len(out) > 0 {
+			out = append(out, "")
+		}
+		out = append(out, table...)
+	}
+	// CTA to open Spec UI (if any)
+	out = append(out, "")
+	out = append(out, zone.Mark("dash.btn.specui", hlButton("打开 SpecUI"))+AfterButton("  进入规范工作台"))
+	return out
+}
+
+// linesConfigOverview merges CLI status table and brief model/MCP lists.
+func linesConfigOverview(inner int, m model) []string {
+	out := make([]string, 0, 64)
+	// CLI tools table
+	out = append(out, linesCliStatusTable(inner, m)...)
+	// Models
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	out = append(out, linesModels(m)...)
+	// MCP services
+	if len(out) > 0 {
+		out = append(out, "")
+	}
+	out = append(out, linesMCP(m)...)
+	return out
+}
+
+// linesQuickActions provides primary actions and a short slogan.
+// linesOpsEmbedded renders the right-side ops list inside the card.
+func linesOpsEmbedded(inner int, innerLines int, m model) []string {
+	if inner < 8 {
+		inner = 8
+	}
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	// Reserve 1 line as top padding inside the card
+	listHeight := innerLines - 1
+	if listHeight < 1 {
+		listHeight = 1
+	}
+	s := m.renderOpsPanel(inner, listHeight)
+	arr := strings.Split(s, "\n")
+	// Ensure exactly innerLines lines, with first line as top padding
+	out := make([]string, innerLines)
+	out[0] = ""
+	for i := 1; i < innerLines; i++ {
+		idx := i - 1
+		if idx < len(arr) {
+			out[i] = arr[idx]
+		} else {
+			out[i] = ""
+		}
+	}
 	return out
 }
 
@@ -576,7 +638,7 @@ func linesSlogan() []string {
 
 func linesModels(m model) []string {
 	if m.config.ModelsCount == 0 || len(m.config.Models) == 0 {
-		return []string{"暂无已选择的模型", zone.Mark("dash.btn.settings", hlButton("打开设置"))}
+		return []string{"暂无已选择的模型", zone.Mark("dash.btn.settings", hlButton("打开设置")) + AfterButton(" ")}
 	}
 	lines := []string{"已选择模型:"}
 	for _, s := range m.config.Models {
@@ -587,7 +649,7 @@ func linesModels(m model) []string {
 
 func linesMCP(m model) []string {
 	if m.config.MCPCount == 0 || len(m.config.MCPNames) == 0 {
-		return []string{"暂无 MCP 服务", zone.Mark("dash.btn.settings", hlButton("打开设置"))}
+		return []string{"暂无 MCP 服务", zone.Mark("dash.btn.settings", hlButton("打开设置")) + AfterButton(" ")}
 	}
 	lines := []string{"服务列表:"}
 	for _, n := range m.config.MCPNames {

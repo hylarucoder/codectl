@@ -17,7 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
-	gstyles "github.com/charmbracelet/glamour/styles"
+	ansi "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"codectl/internal/system"
+	uistyle "codectl/internal/ui"
 	zone "github.com/lrstanley/bubblezone"
 )
 
@@ -144,12 +145,12 @@ func initialModel() model {
 	ts := table.DefaultStyles()
 	ts.Header = ts.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(uistyle.Vitesse.Border).
 		BorderBottom(true).
 		Bold(false)
 	ts.Selected = ts.Selected.
-		Foreground(lipgloss.Color("230")).
-		Background(lipgloss.Color("57")).
+		Foreground(uistyle.Vitesse.OnAccent).
+		Background(uistyle.Vitesse.Primary).
 		Bold(false)
 	ft.SetStyles(ts)
 
@@ -600,7 +601,7 @@ func (m model) View() string {
 		if xansi.StringWidth(nameClipped) > clipW {
 			nameClipped = xansi.Truncate(nameClipped, clipW, "…")
 		}
-		divider := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(strings.Repeat("─", sepWidth))
+		divider := lipgloss.NewStyle().Foreground(uistyle.Vitesse.Border).Render(strings.Repeat("─", sepWidth))
 		rightInner := lipgloss.JoinVertical(lipgloss.Left,
 			headerStyle.Render(" "+nameClipped+" "),
 			divider,
@@ -659,14 +660,16 @@ func (m model) View() string {
 var (
 	boxStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("243")).
+			BorderForeground(uistyle.Vitesse.Border).
+			Background(uistyle.Vitesse.Bg).
 			Padding(0, 1)
 	boxStyleFocus = lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color("63")).
+			BorderForeground(uistyle.Vitesse.Primary).
+			Background(uistyle.Vitesse.Bg).
 			Padding(0, 1)
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("250"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(uistyle.Vitesse.Text)
+	dimStyle    = lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary)
 )
 
 func (m *model) recalcViewports() {
@@ -762,7 +765,7 @@ func (m *model) buildRenderer() {
 		wrap = 10
 	}
 	r, _ := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(gstyles.DarkStyle),
+		glamour.WithStyles(vitesseGlamour()),
 		glamour.WithWordWrap(wrap),
 	)
 	m.renderer = r
@@ -779,6 +782,100 @@ type renderDoneMsg struct {
 }
 
 const fastThresholdBytes = 64 * 1024 // 64KB (aggressive for snappier UI)
+
+// vitesseGlamour returns a glamour ANSI style config adapted to the
+// centralized Vitesse theme used by the main UI.
+func vitesseGlamour() ansi.StyleConfig {
+	// helper: take lipgloss.Color -> hex without alpha
+	hex := func(c lipgloss.Color) string {
+		s := string(c)
+		if strings.HasPrefix(s, "#") && len(s) == 9 { // #RRGGBBAA
+			return s[:7]
+		}
+		return s
+	}
+	sp := func(s string) *string { return &s }
+	bp := func(b bool) *bool { return &b }
+
+	// palette
+	text := hex(uistyle.Vitesse.Text)
+	secondary := hex(uistyle.Vitesse.Secondary)
+	muted := hex(uistyle.Vitesse.Muted)
+	primary := hex(uistyle.Vitesse.Primary)
+	blue := hex(uistyle.Vitesse.Blue)
+	yellow := hex(uistyle.Vitesse.Yellow)
+	magenta := hex(uistyle.Vitesse.Magenta)
+	red := hex(uistyle.Vitesse.Red)
+	bg := hex(uistyle.Vitesse.Bg)
+	bgSoft := hex(uistyle.Vitesse.BgSoft)
+
+	return ansi.StyleConfig{
+		Document: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bg)},
+		},
+		Paragraph: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(text)},
+		},
+		BlockQuote: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(secondary), Italic: bp(true)},
+		},
+		Heading: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)},
+		},
+		H1: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)}},
+		H2: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)}},
+		H3: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H4: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(yellow), Bold: bp(true)}},
+		H5: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(magenta), Bold: bp(true)}},
+		H6: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(secondary)}},
+
+		Text:           ansi.StylePrimitive{Color: sp(text)},
+		Emph:           ansi.StylePrimitive{Italic: bp(true)},
+		Strong:         ansi.StylePrimitive{Bold: bp(true)},
+		Strikethrough:  ansi.StylePrimitive{CrossedOut: bp(true)},
+		HorizontalRule: ansi.StylePrimitive{Color: sp(secondary)},
+
+		Link:     ansi.StylePrimitive{Color: sp(blue), Underline: bp(true)},
+		LinkText: ansi.StylePrimitive{Color: sp(blue), Underline: bp(true)},
+
+		Code: ansi.StyleBlock{ // inline code
+			StylePrimitive: ansi.StylePrimitive{Color: sp(yellow), BackgroundColor: sp(bgSoft)},
+		},
+		CodeBlock: ansi.StyleCodeBlock{
+			StyleBlock: ansi.StyleBlock{
+				StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bgSoft)},
+			},
+			// Basic chroma mapping tuned to Vitesse accents
+			Chroma: &ansi.Chroma{
+				Text:              ansi.StylePrimitive{Color: sp(text)},
+				Comment:           ansi.StylePrimitive{Color: sp(muted), Italic: bp(true)},
+				Keyword:           ansi.StylePrimitive{Color: sp(primary), Bold: bp(true)},
+				NameFunction:      ansi.StylePrimitive{Color: sp(blue)},
+				NameBuiltin:       ansi.StylePrimitive{Color: sp(magenta)},
+				LiteralString:     ansi.StylePrimitive{Color: sp(yellow)},
+				LiteralNumber:     ansi.StylePrimitive{Color: sp(magenta)},
+				NameAttribute:     ansi.StylePrimitive{Color: sp(blue)},
+				Operator:          ansi.StylePrimitive{Color: sp(secondary)},
+				Punctuation:       ansi.StylePrimitive{Color: sp(secondary)},
+				GenericDeleted:    ansi.StylePrimitive{Color: sp(red)},
+				GenericInserted:   ansi.StylePrimitive{Color: sp(primary)},
+				GenericStrong:     ansi.StylePrimitive{Bold: bp(true)},
+				GenericSubheading: ansi.StylePrimitive{Color: sp(secondary)},
+				Background:        ansi.StylePrimitive{BackgroundColor: sp(bgSoft)},
+			},
+		},
+
+		Table: ansi.StyleTable{
+			StyleBlock:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(text)}},
+			CenterSeparator: sp("│"),
+			ColumnSeparator: sp("│"),
+			RowSeparator:    sp("─"),
+		},
+
+		DefinitionTerm:        ansi.StylePrimitive{Bold: bp(true)},
+		DefinitionDescription: ansi.StylePrimitive{Color: sp(secondary)},
+	}
+}
 
 func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 	return func() tea.Msg {
@@ -805,7 +902,7 @@ func renderMarkdownCmd(path string, width int, forceFast bool) tea.Cmd {
 			wrap = 10
 		}
 		r, _ := glamour.NewTermRenderer(
-			glamour.WithStandardStyle(gstyles.DarkStyle),
+			glamour.WithStyles(vitesseGlamour()),
 			glamour.WithWordWrap(wrap),
 		)
 		if out, err := r.Render(content); err == nil {
@@ -1231,28 +1328,20 @@ func renderStatusBarStyled(width int, leftParts, rightParts []string) string {
 		w = 100
 	}
 
-	barFG := lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}
-	barBG := lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"}
+	// Adopt global Vitesse theme from main UI
+	statusBarStyle := uistyle.StatusBarBase()
 
-	statusBarStyle := lipgloss.NewStyle().
-		Foreground(barFG).
-		Background(barBG)
-
-	keyStyle := lipgloss.NewStyle().
-		Inherit(statusBarStyle).
-		Foreground(lipgloss.Color("#FFFDF5")).
-		Background(lipgloss.Color("#FF5F87")).
-		Padding(0, 1).
-		MarginRight(1)
+	keyStyle := uistyle.ChipKeyStyle().Inherit(statusBarStyle).MarginRight(1)
 
 	nugget := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FFFDF5")).
+		Foreground(uistyle.Vitesse.OnAccent).
 		Padding(0, 1)
 
 	nuggetBG := []lipgloss.Color{
-		lipgloss.Color("#A550DF"),
-		lipgloss.Color("#6124DF"),
-		lipgloss.Color("#43BF6D"),
+		uistyle.Vitesse.Primary,
+		uistyle.Vitesse.Blue,
+		uistyle.Vitesse.Yellow,
+		uistyle.Vitesse.Magenta,
 	}
 
 	centerStyle := lipgloss.NewStyle().Inherit(statusBarStyle)

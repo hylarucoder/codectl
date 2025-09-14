@@ -10,8 +10,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	xansi "github.com/charmbracelet/x/ansi"
 	fuzzy "github.com/sahilm/fuzzy"
 
 	"codectl/internal/provider"
@@ -28,24 +26,14 @@ type SlashCmd struct {
 var slashCmds = []SlashCmd{
 	{Name: "/specui", Desc: "Open Spec UI"},
 	{Name: "/settings", Desc: "Open settings to configure models"},
-	{Name: "/add-dir", Desc: "Add a new working directory"},
-	{Name: "/agents", Desc: "Manage agent configurations"},
-	{Name: "/bashes", Desc: "List and manage background tasks"},
+	{Name: "/subagent", Desc: "Manage Subagent"},
 	{Name: "/clear", Aliases: []string{"/reset", "/new"}, Desc: "Clear conversation history and free up context"},
 	{Name: "/compact", Desc: "Clear history but keep a summary"},
 	{Name: "/config", Aliases: []string{"/theme"}, Desc: "Open config panel"},
-	{Name: "/context", Desc: "Visualize current context usage"},
-	{Name: "/cost", Desc: "Show total cost and duration"},
 	{Name: "/doctor", Desc: "Diagnose and verify installation"},
-	{Name: "/add", Desc: "Install supported CLIs (all|codex|claude|gemini)"},
-	{Name: "/remove", Desc: "Uninstall supported CLIs"},
-	{Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
 	{Name: "/upgrade", Aliases: []string{"/update"}, Desc: "Upgrade all supported CLIs to latest"},
-	{Name: "/sync", Desc: "Sync provider.json with built-in defaults"},
 	{Name: "/status", Desc: "Show current status for tools"},
-	{Name: "/init", Desc: "Initialize vibe-docs/AGENTS.md in current repo"},
-	{Name: "/task", Desc: "Create vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx"},
-	{Name: "/spec", Desc: "Generate spec via Codex and save to vibe-docs/spec"},
+	{Name: "/exit", Aliases: []string{"/quit"}, Desc: "Exit the REPL"},
 	{Name: "/codex", Desc: "运行 codex CLI（可附带参数）"},
 }
 
@@ -121,78 +109,6 @@ func filterSlashCommands(prefix string) []SlashCmd {
 		seen[c.Name] = true
 	}
 	return out
-}
-
-func renderSlashHelp(width int, cmds []SlashCmd, sel int) string {
-	// limit list size for readability
-	maxItems := 10
-	if len(cmds) > maxItems {
-		cmds = cmds[:maxItems]
-		if sel >= maxItems {
-			sel = maxItems - 1
-		}
-	}
-	// compute widths
-	nameWidth := 16
-	inner := width - 2
-	if inner < 20 {
-		inner = 20
-	}
-	// styles (centralized palette)
-	hl := lipgloss.NewStyle().Foreground(Vitesse.Primary).Render
-	dim := lipgloss.NewStyle().Foreground(Vitesse.Muted).Render
-	var b strings.Builder
-	// top border
-	b.WriteString("╭" + strings.Repeat("─", inner) + "╮\n")
-	if len(cmds) == 0 {
-		line := "  no matches"
-		w := xansi.StringWidth(line)
-		if w > inner {
-			diff := w - inner
-			if diff > 0 && diff < len(line) {
-				line = line[:len(line)-diff]
-			}
-		}
-		b.WriteString("│")
-		b.WriteString(line)
-		pad := inner - xansi.StringWidth(line)
-		if pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
-		}
-		b.WriteString("│\n")
-		// bottom border and hint
-		b.WriteString("╰" + strings.Repeat("─", inner) + "╯\n")
-		b.WriteString("  ↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 关闭\n")
-		return b.String()
-	}
-	for i, c := range cmds {
-		line := fmt.Sprintf("  %-*s  %s", nameWidth, c.Name, dim(c.Desc))
-		// trim to inner width
-		w := xansi.StringWidth(line)
-		if w > inner {
-			// naive trim to fit
-			diff := w - inner
-			if diff > 0 && diff < len(line) {
-				line = line[:len(line)-diff]
-			}
-		}
-		if i == sel {
-			line = hl(line)
-		}
-		b.WriteString("│")
-		b.WriteString(line)
-		// pad to inner
-		pad := inner - xansi.StringWidth(line)
-		if pad > 0 {
-			b.WriteString(strings.Repeat(" ", pad))
-		}
-		b.WriteString("│\n")
-	}
-	// bottom border
-	b.WriteString("╰" + strings.Repeat("─", inner) + "╯\n")
-	// hint line
-	b.WriteString("  ↑/↓ 选择 · Tab 补全 · Enter 执行 · Esc 关闭\n")
-	return b.String()
 }
 
 // execSlashLine parses and executes a typed slash command line.

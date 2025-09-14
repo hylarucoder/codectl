@@ -68,6 +68,12 @@ func (m model) View() string {
 					screen = overlayAt(screen, pal, top)
 				}
 			}
+			// overlay quit confirmation on top if active
+			if m.confirmQuit {
+				if box, top := renderQuitConfirm(m); box != "" {
+					screen = overlayAt(screen, box, top)
+				}
+			}
 			return zone.Scan(screen)
 		}
 		pad := h - linesUsed - linesBottom
@@ -81,13 +87,20 @@ func (m model) View() string {
 				screen = overlayAt(screen, pal, top)
 			}
 		}
+		// overlay quit confirmation on top if active
+		if m.confirmQuit {
+			if box, top := renderQuitConfirm(m); box != "" {
+				screen = overlayAt(screen, box, top)
+			}
+		}
 		return zone.Scan(screen)
 	}
 	// Compose body content first; we'll pin status bar at bottom later
 	var body strings.Builder
-	// Single-screen: dash only (remove ASCII banner). Use equal-height rows.
-	topPad := 0 // overlay floats; don't push content
-	// Compute equal row heights.
+	// Single-screen: dash only (remove ASCII banner).
+	// Switch to a 3-column layout with a single row of equal-height cards.
+	// Keep two lines of top padding for breathing room.
+	topPad := 2 // overlay floats; don't push content
 	// Reserve space for message block and bottom status bar.
 	msgBlock := 2 // default when no message
 	if m.notice != "" || m.lastInput != "" {
@@ -95,8 +108,9 @@ func (m model) View() string {
 	}
 	// 1 line bottom bar (added later)
 	bottomBar := 1
-	// we insert 2 row separators between the three rows
-	rowSeps := 2
+	// One row only; separators between rows = 0
+	rowCount := 1
+	rowSeps := rowCount - 1
 	h := m.height
 	if h <= 0 {
 		h = 24
@@ -105,7 +119,7 @@ func (m model) View() string {
 	if avail < 6 {
 		avail = 6
 	}
-	rowTotal := avail / 3
+	rowTotal := avail / maxInt(1, rowCount)
 	if rowTotal < 3 {
 		rowTotal = 3
 	}
@@ -114,6 +128,11 @@ func (m model) View() string {
 	if innerLines < 1 {
 		innerLines = 1
 	}
+	// actual top padding lines
+	if topPad > 0 {
+		body.WriteString(strings.Repeat("\n", topPad))
+	}
+	// Render dashboard grid only (no external right panel)
 	body.WriteString(renderDashFixed(m, innerLines))
 	body.WriteString("\n")
 
@@ -138,6 +157,11 @@ func (m model) View() string {
 				screen = overlayAt(screen, pal, top)
 			}
 		}
+		if m.confirmQuit {
+			if box, top := renderQuitConfirm(m); box != "" {
+				screen = overlayAt(screen, box, top)
+			}
+		}
 		return zone.Scan(screen)
 	}
 	pad := h - linesUsed - linesBottom
@@ -149,6 +173,12 @@ func (m model) View() string {
 	if m.paletteOpen {
 		if pal, top := renderPlacedPalette(m); pal != "" {
 			screen = overlayAt(screen, pal, top)
+		}
+	}
+	// overlay quit confirmation on top if active
+	if m.confirmQuit {
+		if box, top := renderQuitConfirm(m); box != "" {
+			screen = overlayAt(screen, box, top)
 		}
 	}
 	return zone.Scan(screen)
@@ -192,6 +222,9 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
+
+// hjoin horizontally joins two multi-line strings with fixed column widths and a gap.
+// hjoin removed (no external right panel)
 
 // renderPlacedPalette renders the command palette as an overlay positioned
 // roughly at top 1/5 of the screen and using ~3/5 of the terminal width,
@@ -279,4 +312,65 @@ func overlayAt(screen string, overlay string, top int) string {
 		baseLines[idx] = ovLines[i]
 	}
 	return strings.Join(baseLines, "\n")
+}
+
+// renderQuitConfirm builds a centered confirmation box overlay asking to quit.
+// Returns the rendered string padded to screen width and the top line index.
+func renderQuitConfirm(m model) (string, int) {
+	w := m.width
+	h := m.height
+	if w <= 0 {
+		w = 80
+	}
+	if h <= 0 {
+		h = 24
+	}
+	// box width ~ 50% with sensible bounds
+	bw := w / 2
+	if bw < 30 {
+		bw = 30
+	}
+	if bw > w-4 {
+		bw = w - 4
+	}
+	if bw < 10 {
+		bw = w
+	}
+	pad := lipgloss.NewStyle().Padding(1, 2)
+	title := AccentBold().Render("确认退出")
+	prompt := "确定要退出 codectl 吗？"
+	// options
+	yes := "确认"
+	no := "取消"
+	if m.confirmIndex == 0 {
+		yes = Button(yes)
+		no = lipgloss.NewStyle().Foreground(Vitesse.Secondary).Render(no)
+		// Ensure the accent background on the button does not bleed to the rest of the line
+		yes = yes + AfterButton(" ")
+	} else {
+		yes = lipgloss.NewStyle().Foreground(Vitesse.Secondary).Render(yes)
+		no = Button(no)
+		// Ensure the accent background on the button does not bleed to the rest of the line
+		no = no + AfterButton(" ")
+	}
+	hint := "Enter 选择 · ←/→ 切换 · Y 确认 · N 取消"
+	inner := strings.Join([]string{title, "", prompt, "", yes + "    " + no, "", hint}, "\n")
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(Vitesse.Border).
+		Background(Vitesse.Bg).
+		Width(bw).
+		Render(pad.Width(bw - 2).Render(inner))
+	// center horizontally
+	left := (w - bw) / 2
+	out := indentLines(card, left)
+	// center vertically
+	lines := strings.Count(out, "\n") + 1
+	top := (h - lines) / 2
+	if top < 0 {
+		top = 0
+	}
+	// pad overlay lines to full width to fully cover base lines
+	out = padLinesToWidth(out, w)
+	return out, top
 }

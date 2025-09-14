@@ -58,12 +58,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			tiw = 5
 		}
 		m.ti.Width = tiw
+		// size ops panel width reasonably; height is set during render pass
+		rw := opsRightWidth(m.width)
+		if rw < 16 {
+			rw = 16
+		}
+		m.ops.SetSize(rw, maxInt(6, m.height-6))
 		return m, nil
 	case tea.KeyMsg:
 		// Always allow Ctrl+C to quit, even when input is focused
 		if msg.String() == "ctrl+c" {
 			m.quitting = true
 			return m, tea.Quit
+		}
+		// Quit confirmation overlay handling has highest priority
+		if m.confirmQuit {
+			switch msg.String() {
+			case "left", "right", "tab", "shift+tab":
+				if m.confirmIndex == 0 {
+					m.confirmIndex = 1
+				} else {
+					m.confirmIndex = 0
+				}
+				return m, nil
+			case "y":
+				m.quitting = true
+				return m, tea.Quit
+			case "n", "esc":
+				m.confirmQuit = false
+				return m, nil
+			}
+			if msg.Type == tea.KeyEnter {
+				if m.confirmIndex == 0 { // confirm
+					m.quitting = true
+					return m, tea.Quit
+				}
+				// cancel
+				m.confirmQuit = false
+				return m, nil
+			}
+			// ignore other keys when confirming
+			return m, nil
 		}
 		// Open command palette: Cmd+P / Cmd+Shift+P on mac (if terminal forwards), or Ctrl+P fallback
 		sw := msg.String()
@@ -78,14 +113,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshSlash()
 			return m, nil
 		}
-		// When input is not focused, no tab navigation (single screen). Enter runs quick diagnose.
-		if !m.ti.Focused() {
-			s := msg.String()
-			switch s {
-			case "enter":
-				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
-			}
-		}
+		// Note: Do not short-circuit Enter here when input is unfocused.
+		// We handle Enter for the ops list below so Exit and other actions work.
 		// Do not auto-focus input or open palette by typing directly.
 		// Palette must be explicitly opened via Ctrl/Cmd+P.
 		if msg.String() == "esc" && (m.ti.Focused() || m.paletteOpen) {
@@ -180,7 +209,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshSlash()
 			return m, cmd
 		}
-		// otherwise, handle global shortcuts
+		// otherwise, handle global shortcuts and ops list navigation
+		// route up/down/pgup/pgdown to ops list selection when palette closed
+		if !m.paletteOpen {
+			switch msg.Type {
+			case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown:
+				var cmd tea.Cmd
+				m.ops, cmd = m.ops.Update(msg)
+				return m, cmd
+			}
+			// also accept 'k'/'j' vim keys
+			if s := msg.String(); s == "k" || s == "j" {
+				var cmd tea.Cmd
+				m.ops, cmd = m.ops.Update(msg)
+				return m, cmd
+			}
+			// Enter triggers the selected ops action
+			if msg.Type == tea.KeyEnter {
+				if oi, ok := m.getSelectedOps(); ok {
+					// Execute mapped slash command in non-quiet mode (show notices)
+					return m, m.execSlashCmd(oi.cmd, "", false)
+				}
+				// Fallback: quick diagnose
+				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			m.quitting = true
@@ -247,8 +300,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, upgradeOneCmd(m.upList[m.upIndex]))
 		return m, tea.Batch(cmds...)
 	case quitMsg:
-		m.quitting = true
-		return m, tea.Quit
+		// Show confirmation overlay instead of immediate quit
+		m.paletteOpen = false
+		m.slashVisible = false
+		m.ti.Blur()
+		m.confirmQuit = true
+		m.confirmIndex = 1 // default to cancel for safety
+		return m, nil
 	case gitInfoMsg:
 		m.git = msg.info
 		return m, nil

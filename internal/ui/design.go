@@ -95,3 +95,14 @@ func StatusBarBase() lipgloss.Style {
 func Button(s string) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(Vitesse.OnAccent).Background(Vitesse.Primary).Padding(0, 1).Render(s)
 }
+
+// AfterButton wraps following text with the base background to prevent
+// accent background from visually bleeding beyond the button area.
+// Use with a leading space, e.g., AfterButton("  Description"). For lines
+// that end right after a button, you can pass a single space: AfterButton(" ").
+func AfterButton(s string) string {
+	if s == "" {
+		return ""
+	}
+	return lipgloss.NewStyle().Background(Vitesse.Bg).Render(s)
+}
