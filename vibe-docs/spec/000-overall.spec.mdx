@@ -10,22 +10,24 @@ lastUpdated: {auto}
 > 目的：为 codectl 提供统一、可迭代的产品与技术规格，便于对齐目标、约束与实现细节，并指导后续开发、测试与文档。
 
 ## 1. 概述
-- 定位：面向开发者的一站式 Code Agent 配置助手。
-- 价值：统一安装/检测/升级主流代码智能体 CLI；集中管理 API Key 与代理；提供可视化 TUI 与脚本友好的 CLI。
+- 定位：面向开发者的 Spec‑Driven Development 工作台与 Code Agent 配置助手。
+- 价值：在“规范先行”的前提下，统一安装/检测/升级主流代码智能体 CLI；集中管理模型与 MCP 清单；提供可视化 TUI 与脚本友好的 CLI。
 - 核心能力：
-- TUI 总览：展示各工具安装状态、版本、是否可升级；快捷键与斜杠命令操作。
-- CLI 子命令：`cli add`、`cli remove`、`cli update`、`cli ls`、`cli ls-remote`、`model add`、`model remove`、`model ls`、`model ls-remote`、`mcp add`、`mcp remove`、`mcp ls`、`mcp ls-remote`、`update`、`version`、`config`、`spec`。
-- 诊断与升级：检测全局安装版本与 npm registry 最新版本；一键升级。
+  - TUI 总览：展示工具安装状态、版本、可升级提示；支持斜杠命令与操作面板。
+  - Spec UI：`codectl spec` 打开规范工作台（文件树 + Markdown 预览 + 输入/日志），支持从对话快速沉淀文档。
+  - CLI 子命令：`cli`、`config`、`model`、`mcp`、`provider`、`spec`、`check`、`codex`、`update`、`version`、`settings` 等。
+  - 诊断与升级：检测本地安装与 npm 最新版本；一键安装/升级/卸载。
 
 ## 2. 目标与非目标
 - 目标
-- 简化 Codex / Claude Code / Gemini CLI 的安装、检测、升级流程。
-- 提供 JSON 机器可读的环境规格导出，便于脚本集成。
-- 提供一致的交互体验（TUI + CLI），降低上手成本。
+  - 简化 Codex / Claude Code / Gemini 等 CLI 的安装、检测、升级流程。
+  - 以规范驱动（SDD）对齐预期，通过 Spec UI 浏览与沉淀规范与对话上下文。
+  - 提供 JSON 机器可读的校验报告与清单，便于脚本集成（例如 `codectl check --json`）。
+  - 提供一致的交互体验（TUI + CLI），降低上手成本。
 - 非目标
-- 本项目不直接提供模型推理能力。
-- 不替代第三方 CLI 的自身功能与配置项解释；以其官方为准。
-- 初期不引入复杂的后端服务或持久化存储（除未来配置档 Roadmap）。
+  - 本项目不直接提供模型推理能力。
+  - 不替代第三方 CLI 的自身功能与配置项解释；以其官方为准。
+  - 不引入中心化后端服务；仅使用本地配置文件（未来按 Roadmap 渐进增强）。
 
 ## 3. 用户与场景
 - 用户画像：开发者、DevOps、团队内工具维护者。
@@ -40,8 +42,8 @@ lastUpdated: {auto}
 - 升级（Upgrade）：使用 `npm install -g <pkg>@latest` 升级到最新版。
 
 ## 5. 系统范围与边界
-- 输入：终端交互（TUI/CLI）、环境变量（API Key、代理）、系统 PATH、npm registry。
-- 输出：终端渲染（TUI）、标准输出（CLI 文本/JSON）。
+- 输入：终端交互（TUI/CLI）、环境变量（API Key、代理）、系统 PATH、npm registry、Git 仓库根。
+- 输出：终端渲染（TUI）、标准输出（CLI 文本/JSON）、本地配置文件（`~/.codectl/`）。
 - 外部依赖：`node`/`npm`、网络访问 npm registry、`git`（获取仓库信息）。
 
 ## 6. 功能规格
@@ -51,53 +53,57 @@ lastUpdated: {auto}
 - Gemini CLI：`@google/gemini-cli`，二进制：`gemini`
 
 ### 6.2 TUI（默认入口）
-- 框架：Bubble Tea
-- 面板：列出每个工具的安装状态、当前版本、最新版本、检测来源（binary/npm）。
+- 框架：Bubble Tea（`bubbles`/`lipgloss`/`x/ansi`）。
+- 面板：
+  - 顶部 Dashboard：Spec/Task 概览、配置总览（CLI/Models/MCP）、操作区（打开 SpecUI、同步 provider.json 等）。
+  - 工具状态表：列出每个工具的安装状态、当前版本、最新版本、检测来源（binary/npm）。
 - 快捷键
-- `Ctrl+C` 退出
-- 启动时输入框默认已聚焦；输入 `/` 进入命令模式，`Esc` 取消输入
-- 斜杠命令（已实现）
-- `/doctor`：触发重新检测并提示
-- `/status`：汇总当前状态一行文案
-- `/upgrade`（`/update`）：批量升级
-- `/spec <说明>`：调用 Codex 生成规范草案并保存为 `draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
-- `/exit`（`/quit`）：退出
-- `/init`：在当前 Git 仓库根创建 `vibe-docs/AGENTS.md`
+  - `Ctrl+C` 退出
+  - `Ctrl/Cmd+P` 打开命令面板（Slash Palette）
+- 斜杠命令（当前实现）
+  - `/doctor`：重新检测并显示提示
+  - `/status`：汇总当前状态为一行
+  - `/add`、`/remove`、`/upgrade`（`/update`）：批量安装/卸载/升级 CLI
+  - `/task <标题>`：生成 `vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`
+  - `/spec <说明>`：调用 Codex 生成规范草案，保存到 `vibe-docs/spec/draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
+  - `/specui`：在子进程中启动 Spec UI（等价 `codectl spec`）
+  - `/codex [args...]`：在子进程中运行 `codex`（原生命令）
+  - `/settings`：打开模型选择设置面板（写入 `models.json`）
+  - `/sync`：同步/规范化 `~/.codectl/provider.json`（v2）
+  - `/init`：在当前 Git 仓库根创建 `vibe-docs/AGENTS.md`
+  - `/exit`（`/quit`）：退出
 - 状态栏：当前时间、`codectl` 版本、Git 分支/提交（在仓库内时显示）。
 
-### 6.3 CLI 子命令
-- `codectl`：启动 TUI。
-- `codectl cli add [tool]`：安装工具（默认 all；支持 `codex|claude|gemini`）。
-- `codectl cli remove [tool]`：卸载工具（默认 all）。
-- `codectl cli update [tool]`：升级工具（默认 all）。
-- `codectl cli ls`：以列表形式展示受支持工具的当前状态（已安装/版本/是否可升级）。
-- `codectl cli ls-remote`：从 npm registry 查询各受支持工具的最新版本。
-- `codectl model add <model>`：添加模型（按具体模型名）。
-    - 示例：`codectl model add kimi-k2-0905-preview`、`codectl model add kimi-k2-0711-preview`
-- `codectl model remove <model>`：移除模型。
-    - 示例：`codectl model remove kimi-k2-0905-preview`
-- `codectl model ls`：列出当前已添加/可用的本地模型配置。
-- `codectl model ls-remote`：列出远端可用的模型清单（默认从 `~/.codectl/provider.json` 读取；若缺失则使用内置清单）。
-- `codectl mcp add <server>`：添加 MCP 服务端（示例：`codectl mcp add figma-developer-mcp`）。
-- `codectl mcp remove <server>`：移除 MCP 服务端（示例：`codectl mcp remove figma-developer-mcp`）。
-- `codectl mcp ls`：列出当前已配置的 MCP 服务端。
-- `codectl mcp ls-remote`：列出远端可用的 MCP 服务端清单（默认从 `~/.codectl/provider.json` 读取；若缺失则使用内置清单）。
+### 6.3 CLI 子命令（对齐当前实现）
+- `codectl`：启动 TUI（默认行为）。
+- `codectl cli`：打开 CLI 工具管理 TUI（安装/卸载/升级通过斜杠命令执行）。
+- `codectl codex [args...]`：以预设参数启动 Codex，等价于：`codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high`，其余参数原样透传。
+- `codectl spec`：打开交互式 Spec UI（文件树 + Markdown 预览 + 日志/输入）。
+- `codectl spec new "<说明>"`：通过 Codex 生成规范草案，自动写入 frontmatter 并保存到 `vibe-docs/spec/`。
+- `codectl check [--json]`：校验 `vibe-docs/spec/*.spec.mdx` 的 frontmatter；可输出 JSON 报告。
+- `codectl settings`：打开交互式设置界面，选择要写入 `models.json` 的模型。
+- `codectl config [--wizard|-w]`：初始化并打印配置目录 `~/.codectl/`，写入/规范化：
+  - `provider.json`（v2：providers 映射，仅模型清单；MCP 移至独立文件）
+  - `models.json`（默认从 provider 扁平化生成，缺省时创建）
+  - `mcp.json`（独立的名称→配置映射，缺省时写入示例）
+- `codectl provider sync`：同步/规范化 `~/.codectl/provider.json`（v2）。
+- `codectl provider schema`：输出 `provider.json` 的 JSON Schema（用于校验/补全）。
+- `codectl model ls|ls-remote|add|remove`：管理本地模型与查看远端清单（远端来自 `provider.json(v2)` 扁平化）。
+- `codectl mcp ls|ls-remote|add|remove`：管理本地 MCP 服务端清单与占位远端清单。
 - `codectl update`：自更新（占位）。
 - `codectl version`：打印 codectl 版本（纯数字）。
-- `codectl config`：打印配置目录（占位，可扩展）。
-- `codectl spec [--pretty=true]`：输出环境规格 JSON。
 
 <!-- 取消 Provider 别名与批量规则：统一以具体模型名进行 add/remove。 -->
 
 ### 6.4 健康检查逻辑
 - 安装检测：
-- 先通过候选二进制（`Binaries`）尝试执行 `--version/-v/version` 获取版本。
-- 若失败且配置了 `Package`，通过 `npm ls -g --depth=0 <pkg> --json` 解析已装版本。
+  - 先通过候选二进制（`Binaries`）尝试执行 `--version/-v/version` 获取版本。
+  - 若失败且配置了 `Package`，通过 `npm ls -g --depth=0 <pkg> --json` 解析已装版本。
 - 最新版本：`npm view <pkg> version --json` 获取。
-- 结果合并：返回 `Installed`、`Version`、`Latest`、`Source`（binary/npm）、`Error`。
+- 结果合并：返回 `Installed`、`Version`、`Latest`、`Source`（binary/npm）、`Err`。
 
 ### 6.5 升级策略
-- 触发：TUI `u` 或 `/upgrade`；CLI `cli update`/`cli add`。
+- 触发：TUI `/upgrade`（或操作面板）；也可通过 `/add` 安装缺失工具。
 - 执行：`npm install -g <pkg>@latest --no-fund --no-audit`。
 - 判断：如当前版本低于 registry，或未知但已安装，则尝试升级；结束后重新检测回显新版本或 `latest`。
 
@@ -106,45 +112,55 @@ lastUpdated: {auto}
 - API Key（按需）：`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GOOGLE_API_KEY`
 - 代理（可选）：`HTTP_PROXY`、`HTTPS_PROXY`
 
-### 7.2 JSON 规格（`codectl spec` 输出）
+### 7.2 校验报告 JSON（`codectl check --json` 输出）
 - 结构
-- `codectlVersion`: string
-- `os`: string (GOOS)
-- `arch`: string (GOARCH)
-- `tools`: 数组
-- `id`: `Codex|Claude|Gemini`
-- `name`: string（展示名）
-- `installed`: bool
-- `version`: string（可选）
-- `latest`: string（可选）
-- `source`: string（binary/npm，可选）
-- `error`: string（可选）
+  - `root`: string（仓库根或 CWD）
+  - `dirs`: string[]（被检查的目录清单，默认包含 `vibe-docs/spec`）
+  - `items`: 数组，每项：
+    - `path`: string（文件路径）
+    - `hasFrontmatter`: bool
+    - `fields`: map[string]string（解析到的字段）
+    - `errors`: string[]（错误列表）
+    - `warnings`: string[]（警告列表）
+  - `errors`: number（总错误数）
+  - `warnings`: number（总警告数）
 
-示例（pretty=true）：
+示例：
 
 ```json
 {
-  "codectlVersion": "0.2.0",
-  "os": "darwin",
-  "arch": "arm64",
-  "tools": [
-    {"id": "Codex",  "name": "Codex (@openai/codex)", "installed": true,  "version": "1.2.3", "latest": "1.2.4", "source": "binary"},
-    {"id": "Claude", "name": "Claude Code (@anthropic-ai/claude-code)", "installed": false, "error": "not found"},
-    {"id": "Gemini", "name": "Gemini CLI (@google/gemini-cli)", "installed": true,  "version": "0.9.1", "latest": "0.9.1", "source": "npm"}
-  ]
+  "root": "/path/to/repo",
+  "dirs": ["/path/to/repo/vibe-docs/spec"],
+  "items": [
+    {
+      "path": "/path/to/repo/vibe-docs/spec/000-overall.spec.mdx",
+      "hasFrontmatter": true,
+      "fields": {"title": "codectl — 产品与技术规格", "specversion": "0.1.0", "status": "accepted"},
+      "warnings": [],
+      "errors": []
+    }
+  ],
+  "errors": 0,
+  "warnings": 0
 }
 ```
 
 ## 8. 架构设计
-- 语言与框架：Go 1.20+；CLI 使用 Cobra；TUI 使用 Bubble Tea（含 `bubbles/textinput`、`lipgloss`、`x/ansi`）。
+- 语言与框架：Go 1.25；CLI 使用 Cobra；TUI 使用 Bubble Tea（含 `bubbles/textinput`、`lipgloss`、`x/ansi`、`glamour` 渲染 Markdown）。
 - 模块划分（`internal/`）
-- `app`：应用启动封装（TUI 入口）。
-- `cli`：子命令实现（`root.go`/`spec.go`/...）。
-- `tools`：工具注册、检测与升级（npm 交互、版本比较）。
-- `system`：系统/仓库信息（Git root/分支/提交）。
-- `ui`：TUI 模型、渲染、消息、命令、斜杠命令处理。
-- `version`：应用版本常量。
-- 进程模型：单进程 CLI；通过子进程调用 `npm`、`git`；TUI 内部基于消息驱动（tea.Cmd）并发执行检测与升级。
+  - `app`：应用启动封装（TUI 入口）。
+  - `cli`：子命令实现（`root.go`、`spec.go`、`check.go`、`codex.go`、`provider/*` 等）。
+  - `specui`：规范工作台 UI（文件树、Markdown 预览、日志/输入）。
+  - `tools`：工具注册、检测与升级（npm 交互、版本比较）。
+  - `provider`：远端清单 v2（`~/.codectl/provider.json`，providers 映射 + models），Schema 输出与读写。
+  - `models`：本地模型清单（`~/.codectl/models.json`）。
+  - `mcp`：本地 MCP 服务端清单（`~/.codectl/mcp.json`）。
+  - `settings`：交互式表单（选择并写入 `models.json`）。
+  - `config`：配置目录发现与迁移（`~/.codectl/`）。
+  - `system`：系统/仓库信息（Git root/分支/提交）。
+  - `ui`：TUI 模型、渲染、消息、命令、斜杠命令处理。
+  - `version`：应用版本常量。
+- 进程模型：单进程 CLI；通过子进程调用 `codex`、`npm`、`git`；TUI 内部基于消息驱动（tea.Cmd）并发执行检测与升级。
 
 ## 9. 错误处理与可用性
 - 失败容忍：npm/二进制检测失败不影响其他工具；集中展示错误提示。
@@ -173,16 +189,20 @@ lastUpdated: {auto}
 - 在本地/CI 使用假 npm registry 或对真实命令加速与隔离（可配置跳过）。
 
 ## 14. 构建与发布
-- 构建：`go build -o codectl`；本地运行 `go run .`。
+- 构建：`go build -o codectl`；本地运行 `go run .`；开发热重载可用 `make start`（Air）。
 - 版本：`internal/version` 提供 `AppVersion`；`codectl version` 输出数字以便脚本处理。
 - 自更新：`codectl update` 为占位，后续对接 Release 资源。
 
 ## 15. Roadmap（与 README 对齐）
-- 0.1 原型：TUI 框架与基础交互。
-- 0.2 健康检查：检测工具安装/版本、API Key/代理连通性与修复建议（逐步完善）。
-- 0.3 配置向导：写入/更新环境变量；创建与切换配置档（profiles）。
-- 0.4 生态集成：输出统一配置（如 `~/.config/codectl/config.json`），提供编辑器/终端集成脚本。
-- 0.5 可扩展提供商：更多 LLM/企业代理/私有化场景。
+- 0.1 原型：TUI 框架、Spec UI 雏形与基础交互。
+- 0.2 健康检查：检测 CLI 是否已安装与版本信息；API Key/代理连通性与修复建议（逐步完善）。
+- 0.3 配置向导：
+  - 引导写入/更新环境变量与常见 CLI 的配置文件。
+  - 支持创建与切换配置档（profiles）。
+- 0.4 生态与 MCP：
+  - 统一配置（`~/.codectl/*.json`），MCP 客户端/服务端的基础管理能力（配置与健康检查）。
+  - 常见编辑器/终端插件的配置提示与自动化脚本。
+- 0.5 可扩展提供商：更多 LLM/企业代理/私有化部署；Provider/MCP 插件机制（提案与 PoC）。
 
 ## 16. 开放问题
 - Windows 平台下 npm 全局安装位置与 PATH 差异处理策略。
@@ -192,12 +212,4 @@ lastUpdated: {auto}
 
 ---
 最后更新：{auto}
-# codectl — 产品与技术规格（草案）
----
-title: codectl — 产品与技术规格
-specVersion: 0.1.0
-status: accepted
-lastUpdated: {auto}
----
-
-# codectl — 产品与技术规格（草案）
+ 
