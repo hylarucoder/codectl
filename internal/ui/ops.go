@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // opsItem represents an item in the right-side operations panel.
@@ -30,11 +31,35 @@ func newOpsList() list.Model {
 		opsItem{title: "Exit", desc: "Quit codectl", cmd: "/exit"},
 	}
 
-	// Use default delegate but dim headers and prevent selection highlight from overwhelming
+	// Use default delegate and adapt styles to Vitesse theme
 	d := list.NewDefaultDelegate()
+	s := list.NewDefaultItemStyles()
+	// Normal item
+	s.NormalTitle = s.NormalTitle.Foreground(Vitesse.Text)
+	s.NormalDesc = s.NormalDesc.Foreground(Vitesse.Secondary)
+	// Selected item: accent colored left border and title/desc
+	s.SelectedTitle = s.SelectedTitle.
+		BorderForeground(Vitesse.Primary).
+		Foreground(Vitesse.Primary)
+	s.SelectedDesc = s.SelectedDesc.
+		Foreground(Vitesse.Primary)
+	// Dimmed when filtering (not commonly used since filter hidden)
+	s.DimmedTitle = s.DimmedTitle.Foreground(Vitesse.Secondary)
+	s.DimmedDesc = s.DimmedDesc.Foreground(Vitesse.Muted)
+	// Highlight filter matches
+	s.FilterMatch = lipgloss.NewStyle().Foreground(Vitesse.Yellow).Underline(true)
+	d.Styles = s
 	l := list.New(items, d, 28, 12)
-	// Do not render internal title; the card already has its own title
-	l.Title = ""
+	// List chrome styles (title/help/status/pagination) use theme colors if shown
+    ls := list.DefaultStyles()
+    ls.Title = ls.Title.Foreground(Vitesse.Text)
+    ls.PaginationStyle = ls.PaginationStyle.Foreground(Vitesse.Secondary)
+    ls.HelpStyle = ls.HelpStyle.Foreground(Vitesse.Muted)
+    ls.StatusBar = ls.StatusBar.Foreground(Vitesse.Secondary)
+    l.Styles = ls
+    // Do not render internal title; the card handles captioning itself
+    l.Title = ""
+    l.SetShowTitle(false)
 	l.SetShowHelp(false)
 	l.SetShowStatusBar(false)
 	l.SetShowFilter(false)
