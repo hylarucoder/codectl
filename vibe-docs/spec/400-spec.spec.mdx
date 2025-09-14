@@ -71,3 +71,25 @@ lastUpdated: {auto}
 ## 8. 破坏性变更与版本
 - 当 `breaking: true`：文档必须给出兼容窗口、迁移步骤与回滚方案。
 - `specVersion` 采用语义化版本；不兼容升级需在文档中标注并提供迁移指引。
+
+## 9. 多 Spec 会话与聊天上下文（规划）
+
+为支持并行推进多个规范，Spec 工作台需支持“多会话”能力：
+
+- 行为要求
+  - MUST 允许同时打开多个 `.spec.mdx` 形成独立会话，每个会话拥有各自的“聊天日志/输入历史/状态”。
+  - MUST 提供可视化的会话切换（建议：顶部标签栏/Tab），高亮当前会话的标题（来自 frontmatter.title，回退为文件名）。
+  - SHOULD 支持从文件树将某个文件加入会话栏（例如：Enter 激活，Ctrl+T 新开会话）。
+  - SHOULD 支持快捷键：`Ctrl+T` 新开、`Ctrl+W` 关闭、`Alt+←/→` 左右切换、`Enter` 在文件表中切换/激活。
+  - SHOULD 在会话切换时保持各自的 Markdown 渲染滚动位置与日志滚动位置。
+
+- 数据与持久化（建议）
+  - 默认日志保存在内存；提供“导出会话”为 `vibe-docs/spec/chats/<slug>/YYYYMMDD-HHMMSS.chat.mdx` 的能力（可选）。
+  - 导出格式建议包含 frontmatter（`title/relatedSpec/createdAt/lastUpdated`）与会话消息列表，便于追踪与归档。
+
+- 斜杠命令（规划）
+  - `/open <path|slug>`：将指定 spec 加入会话并切换到该会话。
+  - `/switch <index|title>`：在已打开会话间切换。
+  - `/close [<index|title>]`：关闭当前或指定会话。
+
+备注：上述为 UI/UX 规范，具体存储结构与快捷键可在实现阶段细化，但需满足“多会话并行、上下文独立、切换迅速”的目标。

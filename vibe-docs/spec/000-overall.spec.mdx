@@ -14,7 +14,7 @@ lastUpdated: {auto}
 - 卖点：以“Spec 工作流（Spec → Task → Coding）”为核心，通过 TUI 将对话与实现即时沉淀为规范与任务，驱动开发与验证，形成闭环。
 - 价值：在“规范先行”的前提下，统一安装/检测/升级主流代码智能体 CLI；集中管理模型与 MCP 清单；提供可视化 TUI 与脚本友好的 CLI。
 - 核心能力：
-  - Spec 工作流：`codectl spec` 打开规范工作台（文件树 + Markdown 预览 + 输入/日志）；支持 `/spec` 生成规范草案、`/task` 产出任务文档、`codectl check` 校验 frontmatter；鼓励从对话快速固化为可验收的文档。
+  - Spec 工作流：`codectl spec` 打开规范工作台（文件树 + Markdown 预览 + 输入/日志）；支持 `/spec` 生成规范草案、`/task` 产出任务文档、`codectl check` 校验 frontmatter；支持开启多个 Spec 会话并行讨论（每个会话独立日志与输入历史，支持在会话间快速切换）；鼓励从对话快速固化为可验收的文档。
   - TUI 总览：展示工具安装状态、版本、可升级提示；支持斜杠命令与操作面板（安装/卸载/升级/状态）。
   - CLI 命令：`cli`、`config`、`model`、`mcp`、`provider`、`spec`、`check`、`codex`、`update`、`version`、`settings` 等；其中 `codectl cli` 直接进入 TUI，具体操作通过斜杠命令完成。
   - 诊断与升级：检测本地安装与 npm 最新版本；一键安装/升级/卸载。
@@ -61,6 +61,7 @@ lastUpdated: {auto}
 - 快捷键
   - `Ctrl+C` 退出
   - `Ctrl/Cmd+P` 打开命令面板（Slash Palette）
+  - 多会话（规划）：`Ctrl+T` 新开会话（将当前选择的 Spec 加入会话栏）、`Ctrl+W` 关闭当前会话、`Alt+←/→` 切换会话、`Enter` 在文件表中切换/激活会话
 - 斜杠命令（当前实现）
   - `/doctor`：重新检测并显示提示
   - `/status`：汇总当前状态为一行
