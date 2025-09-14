@@ -47,66 +47,27 @@ lastUpdated: {auto}
 - 输出：终端渲染（TUI）、标准输出（CLI 文本/JSON）、本地配置文件（`~/.codectl/`）。
 - 外部依赖：`node`/`npm`、网络访问 npm registry、`git`（获取仓库信息）。
 
-## 6. 功能规格
-### 6.1 支持工具
-- Codex：`@openai/codex`，二进制：`codex`、`openai-codex`
-- Claude Code：`@anthropic-ai/claude-code`，二进制：`claude`、`claude-code`
-- Gemini CLI：`@google/gemini-cli`，二进制：`gemini`
+## 6. 功能规格（核心索引）
 
-### 6.2 TUI（默认入口）
-- 框架：Bubble Tea（`bubbles`/`lipgloss`/`x/ansi`）。
-- 面板：
-  - 顶部 Dashboard：Spec/Task 概览、配置总览（CLI/Models/MCP）、操作区（打开 SpecUI、同步 provider.json 等）。
-  - 工具状态表：列出每个工具的安装状态、当前版本、最新版本、检测来源（binary/npm）。
-- 快捷键
-  - `Ctrl+C` 退出
-  - `Ctrl/Cmd+P` 打开命令面板（Slash Palette）
-  - 多会话（规划）：`Ctrl+T` 新开会话（将当前选择的 Spec 加入会话栏）、`Ctrl+W` 关闭当前会话、`Alt+←/→` 切换会话、`Enter` 在文件表中切换/激活会话
-- 斜杠命令（当前实现）
-  - `/doctor`：重新检测并显示提示
-  - `/status`：汇总当前状态为一行
-  - `/add`、`/remove`、`/upgrade`（`/update`）：批量安装/卸载/升级 CLI
-  - `/task <标题>`：生成 `vibe-docs/task/YYMMDD-HHMMSS-<slug>.task.mdx`
-  - `/spec <说明>`：调用 Codex 生成规范草案，保存到 `vibe-docs/spec/draft-YYMMDD-HHMMSS-<slug>.spec.mdx`
-  - `/specui`：在子进程中启动 Spec UI（等价 `codectl spec`）
-  - `/codex [args...]`：在子进程中运行 `codex`（原生命令）
-  - `/settings`：打开模型选择设置面板（写入 `models.json`）
-  - `/sync`：同步/规范化 `~/.codectl/provider.json`（v2）
-  - `/init`：在当前 Git 仓库根创建 `vibe-docs/AGENTS.md`
-  - `/exit`（`/quit`）：退出
-- 状态栏：当前时间、`codectl` 版本、Git 分支/提交（在仓库内时显示）。
+本节概述核心功能，并链接到对应规范文件获取详情。
 
-### 6.3 CLI 子命令（对齐当前实现）
-- `codectl`：启动 TUI（默认行为）。
-- `codectl cli`：打开 CLI 工具管理 TUI（安装/卸载/升级通过斜杠命令执行）。
-- `codectl codex [args...]`：以预设参数启动 Codex，等价于：`codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high`，其余参数原样透传。
-- `codectl spec`：打开交互式 Spec UI（文件树 + Markdown 预览 + 日志/输入）。
-- `codectl spec new "<说明>"`：通过 Codex 生成规范草案，自动写入 frontmatter 并保存到 `vibe-docs/spec/`。
-- `codectl check [--json]`：校验 `vibe-docs/spec/*.spec.mdx` 的 frontmatter；可输出 JSON 报告。
-- `codectl settings`：打开交互式设置界面，选择要写入 `models.json` 的模型。
-- `codectl config [--wizard|-w]`：初始化并打印配置目录 `~/.codectl/`，写入/规范化：
-  - `provider.json`（v2：providers 映射，仅模型清单；MCP 移至独立文件）
-  - `models.json`（默认从 provider 扁平化生成，缺省时创建）
-  - `mcp.json`（独立的名称→配置映射，缺省时写入示例）
-- `codectl provider sync`：同步/规范化 `~/.codectl/provider.json`（v2）。
-- `codectl provider schema`：输出 `provider.json` 的 JSON Schema（用于校验/补全）。
-- 模型与 MCP 清单建议通过 TUI 管理：`codectl settings` 与主面板；CLI 提供 `model` 与 `mcp` 命令组（占位，无子命令）。
-- `codectl update`：自更新（占位）。
-- `codectl version`：打印 codectl 版本（纯数字）。
+### 6.1 Spec 工作流（核心）
+- 工作流总览与任务闭环：见 `./500-task-workflow.spec.mdx`
+- Spec UI 界面与交互：见 `./201-tui-spec-ui.spec.mdx`
+- 多 Spec 会话（并行讨论）：见 `./410-specui-sessions.spec.mdx`
 
-<!-- 取消 Provider 别名与批量规则：统一以具体模型名进行 add/remove。 -->
+### 6.2 TUI 界面
+- 首页 Dashboard（概览、配置、操作）：见 `./201-tui-dash.spec.mdx`
 
-### 6.4 健康检查逻辑
-- 安装检测：
-  - 先通过候选二进制（`Binaries`）尝试执行 `--version/-v/version` 获取版本。
-  - 若失败且配置了 `Package`，通过 `npm ls -g --depth=0 <pkg> --json` 解析已装版本。
-- 最新版本：`npm view <pkg> version --json` 获取。
-- 结果合并：返回 `Installed`、`Version`、`Latest`、`Source`（binary/npm）、`Err`。
+### 6.3 CLI 与工具管理
+- CLI 总体与 Coding Agent 管理：见 `./100-cli-coding-agent.spec.mdx`
 
-### 6.5 升级策略
-- 触发：TUI `/upgrade`（或操作面板）；也可通过 `/add` 安装缺失工具。
-- 执行：`npm install -g <pkg>@latest --no-fund --no-audit`。
-- 判断：如当前版本低于 registry，或未知但已安装，则尝试升级；结束后重新检测回显新版本或 `latest`。
+### 6.4 Provider 与 MCP
+- LLM Provider 管理与配置：见 `./200-llm-provider.spec.mdx`
+- MCP 管理与配置：见 `./300-mcp.spec.mdx`
+
+### 6.5 规范治理与校验
+- 规范文档结构、Frontmatter 与校验：见 `./400-spec.spec.mdx`
 
 ## 7. 数据与接口
 ### 7.1 环境变量
