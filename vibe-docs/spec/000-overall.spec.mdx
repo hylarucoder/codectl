@@ -88,7 +88,7 @@ lastUpdated: {auto}
   - `mcp.json`（独立的名称→配置映射，缺省时写入示例）
 - `codectl provider sync`：同步/规范化 `~/.codectl/provider.json`（v2）。
 - `codectl provider schema`：输出 `provider.json` 的 JSON Schema（用于校验/补全）。
-- 模型与 MCP 清单建议通过 TUI 管理：`codectl settings` 与主面板（CLI 暂无 `model|mcp` 子命令）。
+- 模型与 MCP 清单建议通过 TUI 管理：`codectl settings` 与主面板；CLI 提供 `model` 与 `mcp` 命令组（占位，无子命令）。
 - `codectl update`：自更新（占位）。
 - `codectl version`：打印 codectl 版本（纯数字）。
 
@@ -193,15 +193,10 @@ lastUpdated: {auto}
 - 自更新：`codectl update` 为占位，后续对接 Release 资源。
 
 ## 15. Roadmap（与 README 对齐）
-- 0.1 原型：TUI 框架、Spec UI 雏形与基础交互。
-- 0.2 健康检查：检测 CLI 是否已安装与版本信息；API Key/代理连通性与修复建议（逐步完善）。
-- 0.3 配置向导：
-  - 引导写入/更新环境变量与常见 CLI 的配置文件。
-  - 支持创建与切换配置档（profiles）。
-- 0.4 生态与 MCP：
-  - 统一配置（`~/.codectl/*.json`），MCP 客户端/服务端的基础管理能力（配置与健康检查）。
-  - 常见编辑器/终端插件的配置提示与自动化脚本。
-- 0.5 可扩展提供商：更多 LLM/企业代理/私有化部署；Provider/MCP 插件机制（提案与 PoC）。
+
+- [ ] 1. 原型（Prototype）
+- [ ] 2. 更好的 Spec TUI（Better Spec TUI）
+- [ ] 3. 配置向导（Config Wizard：MCP/自定义 Provider）
 
 ## 16. 开放问题
 - Windows 平台下 npm 全局安装位置与 PATH 差异处理策略。

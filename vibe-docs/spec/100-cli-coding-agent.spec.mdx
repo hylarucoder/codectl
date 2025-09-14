@@ -15,11 +15,16 @@ lastUpdated: {auto}
 - 非目标：不替代第三方 CLI 的功能解释与参数说明。
 
 ## 3. CLI 子命令（规范）
-- `codectl cli add [tool]`
-- `codectl cli remove [tool]`
-- `codectl cli update [tool]`
-- `codectl cli ls`
-- `codectl cli ls-remote`
+
+以下为规划中的 CLI 形态；当前实现以 TUI 斜杠命令为主：`/add`、`/remove`、`/upgrade`、`/status`。
+
+- 规划：`codectl cli add [tool]`
+- 规划：`codectl cli remove [tool]`
+- 规划：`codectl cli update [tool]`
+- 规划：`codectl cli ls`
+- 规划：`codectl cli ls-remote`
+
+说明：`codectl cli` 目前作为命令组入口并直接打开 TUI，具体子命令将按 Roadmap 渐进补齐。
 
 ## 4. 行为与错误码
 - 输出结构、并发策略、超时与错误处理参见 `000-overall.spec.mdx`。
