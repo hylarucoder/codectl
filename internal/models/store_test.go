@@ -1,28 +1,12 @@
 package models
 
 import (
-	"os"
-	"testing"
+    "testing"
 
-	tu "codectl/internal/testutil"
+    tu "codectl/internal/testutil"
 )
 
-func withEnv(t *testing.T, key, val string) func() {
-	t.Helper()
-	old, had := os.LookupEnv(key)
-	if val == "" {
-		_ = os.Unsetenv(key)
-	} else {
-		_ = os.Setenv(key, val)
-	}
-	return func() {
-		if had {
-			_ = os.Setenv(key, old)
-		} else {
-			_ = os.Unsetenv(key)
-		}
-	}
-}
+// withEnv removed (unused; use internal/testutil.WithEnv)
 
 func TestModels_SaveLoad_AddRemove(t *testing.T) {
 	tmp := t.TempDir()

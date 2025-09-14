@@ -55,6 +55,8 @@ type model struct {
 
 	// tabs
 	activeTab tabKind
+	// focused dashboard pane: 0=Spec/Tasks, 1=Config, 2=Ops
+	focusedPane int
 
 	// config info (for dash)
 	config ConfigInfo
@@ -93,6 +95,8 @@ func initialModel() model {
 	m.hintUntil = time.Now().Add(6 * time.Second)
 	// default tab
 	m.activeTab = tabDash
+	// default focus to bottom-right card (Ops)
+	m.focusedPane = 2
 	return m
 }
 
@@ -103,7 +107,4 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(checkAllCmd(), configInfoCmd(), tickCmd(), gitInfoCmd(m.cwd))
 }
 
-// public constructor for app
-func (m model) initCmd() tea.Cmd {
-	return tea.Batch(checkAllCmd(), configInfoCmd(), tickCmd(), gitInfoCmd(m.cwd))
-}
+// initCmd removed (unused)

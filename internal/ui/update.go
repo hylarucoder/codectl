@@ -44,10 +44,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if zone.Get("dash.btn.specui").InBounds(msg) {
 				return m, m.execSlashCmd("/specui", "", false)
 			}
-            if zone.Get("dash.btn.work").InBounds(msg) {
-                // open Spec UI (Spec/Task is the 3rd tab inside)
-                return m, m.execSlashCmd("/specui", "", false)
-            }
+			if zone.Get("dash.btn.work").InBounds(msg) {
+				// open Spec UI (Spec/Task is the 3rd tab inside)
+				return m, m.execSlashCmd("/specui", "", false)
+			}
 		}
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -68,7 +68,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rw = 16
 		}
 		m.ops.SetSize(rw, maxInt(6, m.height-6))
-        return m, nil
+		return m, nil
 	case tea.KeyMsg:
 		// Always allow Ctrl+C to quit, even when input is focused
 		if msg.String() == "ctrl+c" {
@@ -213,29 +213,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshSlash()
 			return m, cmd
 		}
-		// otherwise, handle global shortcuts and ops list navigation
-		// route up/down/pgup/pgdown to ops list selection when palette closed
+		// otherwise, handle global shortcuts, focus switching, and ops list navigation
 		if !m.paletteOpen {
-			switch msg.Type {
-			case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown:
-				var cmd tea.Cmd
-				m.ops, cmd = m.ops.Update(msg)
-				return m, cmd
-			}
-			// also accept 'k'/'j' vim keys
-			if s := msg.String(); s == "k" || s == "j" {
-				var cmd tea.Cmd
-				m.ops, cmd = m.ops.Update(msg)
-				return m, cmd
-			}
-			// Enter triggers the selected ops action
-			if msg.Type == tea.KeyEnter {
-				if oi, ok := m.getSelectedOps(); ok {
-					// Execute mapped slash command in non-quiet mode (show notices)
-					return m, m.execSlashCmd(oi.cmd, "", false)
+			// Ctrl+H/J/K/L switch focus across dashboard panes
+			switch msg.String() {
+			case "ctrl+h":
+				if m.focusedPane > 0 {
+					m.focusedPane--
 				}
-				// Fallback: quick diagnose
-				return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
+				return m, nil
+			case "ctrl+l":
+				if m.focusedPane < 2 {
+					m.focusedPane++
+				}
+				return m, nil
+			case "ctrl+j":
+				// single row; treat as move right
+				if m.focusedPane < 2 {
+					m.focusedPane++
+				}
+				return m, nil
+			case "ctrl+k":
+				// single row; treat as move left
+				if m.focusedPane > 0 {
+					m.focusedPane--
+				}
+				return m, nil
+			}
+			// Route ops list navigation keys only when Ops pane is focused
+			if m.focusedPane == 2 {
+				switch msg.Type {
+				case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown:
+					var cmd tea.Cmd
+					m.ops, cmd = m.ops.Update(msg)
+					return m, cmd
+				}
+				// also accept 'k'/'j' vim keys
+				if s := msg.String(); s == "k" || s == "j" {
+					var cmd tea.Cmd
+					m.ops, cmd = m.ops.Update(msg)
+					return m, cmd
+				}
+				// Enter triggers the selected ops action
+				if msg.Type == tea.KeyEnter {
+					if oi, ok := m.getSelectedOps(); ok {
+						// Execute mapped slash command in non-quiet mode (show notices)
+						return m, m.execSlashCmd(oi.cmd, "", false)
+					}
+					// Fallback: quick diagnose
+					return m, tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
+				}
 			}
 		}
 		switch msg.String() {
@@ -266,9 +293,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noticeMsg:
 		m.notice = string(msg)
 		return m, nil
-    case configInfoMsg:
-        m.config = msg.info
-        return m, nil
+	case configInfoMsg:
+		m.config = msg.info
+		return m, nil
 	case startUpgradeMsg:
 		if m.upgrading {
 			return m, nil
@@ -394,7 +421,4 @@ func gitInfoCmd(dir string) tea.Cmd {
 }
 
 // performActiveTab triggers the action for the current tab.
-func (m model) performActiveTab() tea.Cmd {
-	// Tabs have been removed; keep Enter behavior to re-run checks as a quick action.
-	return tea.Batch(func() tea.Msg { return noticeMsg("正在运行诊断…") }, checkAllCmd(), configInfoCmd())
-}
+// performActiveTab removed (tabs not used in dash layout)

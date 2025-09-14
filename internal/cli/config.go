@@ -152,8 +152,8 @@ func runConfigWizard(ctx context.Context) error {
 	fmt.Printf("使用 provider.json(v2)：%s\n\n", provPath)
 
 	// Interactive selections
-	in := newLiner()
-	defer in.Close()
+    in := newLiner()
+    defer func() { _ = in.Close() }()
 
 	// Models
 	models := provider.Models()

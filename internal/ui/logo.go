@@ -7,17 +7,7 @@ import (
 )
 
 // asciiLogo returns a 6-line ASCII art for "CODECTL" using plain ASCII.
-func asciiLogo() []string {
-	// Height 6, simple banner-style letters
-	return []string{
-		"  _____    ____    _____   _______  _______  _        ",
-		" / ____|  / __ \\  |  __\\ |__   __||__   __|| |       ",
-		"| |      | |  | | | |  | |   | |       | |   | |      ",
-		"| |      | |  | | | |  | |   | |       | |   | |      ",
-		"| |____  | |__| | | |__| |   | |       | |   | |____   ",
-		" \\_____|  \\____/  |_____/    |_|       |_|   |______|  ",
-	}
-}
+// asciiLogo removed (unused)
 
 // asciiLogoBlocks returns 6xN blocks for CODECTL letters.
 func asciiLogoBlocks() [][]string {
@@ -112,52 +102,7 @@ func composeLogoLines(blocks [][]string, solid bool) []string {
 
 // renderLogoTopThird centers the ASCII logo horizontally and vertically within the top third.
 // Returns the string including the necessary leading newlines.
-func renderLogoTopThird(width, height int) string {
-	lines := composeLogoLines(asciiLogoBlocks(), true)
-	h := len(lines)
-	if h == 0 {
-		return ""
-	}
-	// compute top area
-	topArea := height / 3
-	if topArea < h+1 { // ensure at least room for logo
-		topArea = h + 1
-	}
-	// vertical centering within top third
-	padTop := (topArea - h) / 2
-	if padTop < 0 {
-		padTop = 0
-	}
-	var b strings.Builder
-	if padTop > 0 {
-		b.WriteString(strings.Repeat("\n", padTop))
-	}
-	// horizontal centering/trim
-	inner := width
-	if inner <= 0 {
-		inner = 80
-	}
-	for _, ln := range lines {
-		w := xansi.StringWidth(ln)
-		if w >= inner {
-			// naive trim
-			if len(ln) > inner {
-				ln = ln[:inner]
-			}
-			b.WriteString(colorizeLine(ln))
-			b.WriteString("\n")
-			continue
-		}
-		pad := (inner - w) / 2
-		if pad < 0 {
-			pad = 0
-		}
-		b.WriteString(strings.Repeat(" ", pad))
-		b.WriteString(colorizeLine(ln))
-		b.WriteString("\n")
-	}
-	return b.String()
-}
+// renderLogoTopThird removed (unused)
 
 // colorizeLine applies a simple horizontal gradient using lipgloss foreground colors.
 func colorizeLine(s string) string {
@@ -169,31 +114,39 @@ func colorizeLine(s string) string {
 // renderLogoCard renders a full-width card at the top containing a centered
 // ASCII "CODECTL" banner. It returns the rendered string and the number of
 // lines the card occupies on screen.
-func renderLogoCard(totalWidth int) (string, int) {
+// renderLogoCard removed (unused; use renderLogoCardSized)
+
+// renderLogoCardSized renders the top logo card with an explicit total height.
+// totalHeight includes the top and bottom borders; the content area will be
+// padded or clipped to fit. Returns the rendered string and the final height.
+func renderLogoCardSized(totalWidth, totalHeight int) (string, int) {
 	if totalWidth <= 0 {
 		totalWidth = 80
 	}
-	// The card box outer width equals inner content width + 2 (borders).
+	if totalHeight < 3 { // at least top+bottom+1 content
+		totalHeight = 3
+	}
 	inner := totalWidth - 2
 	if inner < 16 {
 		inner = 16
 	}
-
-	// Build banner lines and center them within the card's content area.
-	// Use ASCII-only variant with '#' glyphs to avoid non-ASCII blocks.
+	// content height inside borders
+	innerLines := totalHeight - 2
+	if innerLines < 1 {
+		innerLines = 1
+	}
 	raw := composeLogoLines(asciiLogoBlocks(), false)
-	// renderBodyBox applies a left padding of 2; mirror that to compute centering.
 	padLeft := 2
 	cw := inner - padLeft
 	if cw < 1 {
 		cw = 1
 	}
-	lines := make([]string, len(raw))
+	// horizontally center each logo line
+	centered := make([]string, len(raw))
 	for i, ln := range raw {
 		colored := colorizeLine(ln)
 		w := xansi.StringWidth(colored)
 		if w > cw {
-			// Trim to fit content width (ANSI-aware trimming via clipToWidth)
 			colored = clipToWidth(colored, cw)
 			w = xansi.StringWidth(colored)
 		}
@@ -201,16 +154,29 @@ func renderLogoCard(totalWidth int) (string, int) {
 		if cw > w {
 			left = (cw - w) / 2
 		}
-		lines[i] = strings.Repeat(" ", left) + colored
+		centered[i] = strings.Repeat(" ", left) + colored
 	}
-
-	// Fixed content height equals number of banner rows
-	innerLines := len(lines)
-	if innerLines < 1 {
-		innerLines = 1
+	// fit into target content height, attempt vertical centering when there's room
+	var lines []string
+	if innerLines <= len(centered) {
+		lines = centered[:innerLines]
+	} else {
+		topPad := (innerLines - len(centered)) / 2
+		if topPad < 0 {
+			topPad = 0
+		}
+		lines = make([]string, 0, innerLines)
+		// top padding
+		for i := 0; i < topPad; i++ {
+			lines = append(lines, "")
+		}
+		// logo lines
+		lines = append(lines, centered...)
+		// bottom padding
+		for len(lines) < innerLines {
+			lines = append(lines, "")
+		}
 	}
 	card := renderTitledBoxFixed(inner, "", lines, innerLines)
-	// Total visual height = top border + content rows + bottom border
-	height := innerLines + 2
-	return card, height
+	return card, innerLines + 2
 }

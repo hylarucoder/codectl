@@ -9,22 +9,7 @@ import (
 	tu "codectl/internal/testutil"
 )
 
-func withEnv(t *testing.T, key, val string) func() {
-	t.Helper()
-	old, had := os.LookupEnv(key)
-	if val == "" {
-		_ = os.Unsetenv(key)
-	} else {
-		_ = os.Setenv(key, val)
-	}
-	return func() {
-		if had {
-			_ = os.Setenv(key, old)
-		} else {
-			_ = os.Unsetenv(key)
-		}
-	}
-}
+// withEnv removed (unused; use internal/testutil.WithEnv)
 
 func TestLoadV2_DefaultWhenNoFiles(t *testing.T) {
 	tmp := t.TempDir()
@@ -79,11 +64,4 @@ func TestSaveV2_AndModels(t *testing.T) {
 
 // No YAML migration test: YAML is not supported.
 
-func contains(arr []string, s string) bool {
-	for _, v := range arr {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
+// contains removed (unused)

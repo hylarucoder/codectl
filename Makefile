@@ -2,11 +2,15 @@
 
 SHELL := /bin/sh
 
-.PHONY: help start format lint test docker-test docker-coverage docker-test-run
+.PHONY: help start format lint test docker-test docker-coverage docker-test-run build local-install
 
 # Extra flags for tests when running in Docker build (e.g. -v, -run TestName)
 GO_TEST_FLAGS ?= -v
 GO_VET_FLAGS  ?=
+
+# Binary/install settings
+APP_NAME      ?= codectl
+BINDIR        ?= $(HOME)/.local/bin
 
 help: ## Show this help
 	@echo "Available targets:"
@@ -32,6 +36,10 @@ lint: ## Lint (golangci-lint if available, else go vet)
 		echo "golangci-lint not found. Falling back to 'go vet'"; \
 		go vet ./...; \
 	fi
+
+build: ## Build $(APP_NAME) binary
+	@echo "Building $(APP_NAME)..."
+	@go build -o $(APP_NAME)
 
 test: ## Run unit tests with coverage
 	@echo "Running tests..."
@@ -76,3 +84,18 @@ docker-test-run: ## Run tests in a throwaway container via docker run (streams l
 		-v codectl-go-build-cache:/root/.cache/go-build \
 		$(DOCKER_GO_IMAGE) bash -c 'go mod download && go vet $(GO_VET_FLAGS) ./... && go test $(GO_TEST_FLAGS) ./... -coverprofile=coverage.out -covermode=atomic'
 	@echo "Coverage written to ./coverage.out"
+
+staging: build ## Install $(APP_NAME) to local bin (~/.local/bin by default; override with BINDIR=/path)
+	@set -e; \
+		dest="$(BINDIR)"; \
+		bin_name="$(APP_NAME)"; \
+		echo "Installing ./$$bin_name to $$dest/$$bin_name"; \
+		mkdir -p "$$dest"; \
+		install -m 0755 "./$$bin_name" "$$dest/$$bin_name"; \
+		case ":$$PATH:" in *":$$dest:"*) \
+			echo "Installed to $$dest (in PATH)" ;; \
+		*) \
+			echo "Installed to $$dest"; \
+			echo "Note: $$dest is not in PATH. Add it, e.g.:"; \
+			echo "  export PATH=\"$$dest:\$$PATH\""; \
+		esac

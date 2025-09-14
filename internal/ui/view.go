@@ -117,7 +117,11 @@ func (m model) View() string {
 	avail := h - msgBlock - bottomBar - rowSeps - topPad
 	// Reserve space for the top logo card and a separating blank line
 	// so the status bar can stay pinned to the bottom.
-	logoCardHeight := 8 // 6 content rows + top/bottom borders
+	// Make the codectl card take half of the screen height (min 8 lines).
+	logoCardHeight := h / 2
+	if logoCardHeight < 8 {
+		logoCardHeight = 8
+	}
 	avail -= logoCardHeight + 1
 	if avail < 6 {
 		avail = 6
@@ -135,13 +139,13 @@ func (m model) View() string {
 	if topPad > 0 {
 		body.WriteString(strings.Repeat("\n", topPad))
 	}
-	// Render the top ASCII CODECTL card
-	if card, _ := renderLogoCard(m.width); card != "" {
+	// Render the top ASCII CODECTL card with half-screen height
+	if card, _ := renderLogoCardSized(m.width, logoCardHeight); card != "" {
 		body.WriteString(card)
 		body.WriteString("\n")
 	}
-    // Render dashboard grid only (no external right panel)
-    body.WriteString(renderDashFixed(m, innerLines))
+	// Render dashboard grid only (no external right panel)
+	body.WriteString(renderDashFixed(m, innerLines))
 	body.WriteString("\n")
 
 	// message line just above input: prefer notice (if any), else lastInput

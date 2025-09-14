@@ -9,10 +9,9 @@ import (
 
 // opsItem represents an item in the right-side operations panel.
 type opsItem struct {
-	title    string
-	desc     string
-	cmd      string // slash command to execute (e.g., "/specui"); empty means non-action header
-	isHeader bool
+    title    string
+    desc     string
+    cmd      string // slash command to execute (e.g., "/specui"); empty means non-action header
 }
 
 func (i opsItem) Title() string       { return i.title }
@@ -107,10 +106,7 @@ func (m *model) renderOpsPanel(width, height int) string {
 
 // handleOpsKey updates the ops list selection for a key. Returns a tea.Cmd, but
 // we avoid importing tea here; caller handles Enter behavior.
-func (m *model) handleOpsKey(msg any) any {
-	// This is just a typed passthrough; Update is invoked from Update() directly.
-	return msg
-}
+// handleOpsKey removed (unused)
 
 // getSelectedOps returns the current selected actionable item, or ok=false.
 func (m *model) getSelectedOps() (opsItem, bool) {

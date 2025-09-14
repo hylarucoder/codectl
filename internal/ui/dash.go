@@ -33,12 +33,12 @@ func renderDashThreeColsFixed(m model, innerLines int) string {
 	gap := 2
 	w := calcInnerWidths(W, 3, gap)
 	// Column 1: Spec/Task view (stats + recent accepted) — add top padding
-	col1 := renderLabeledCardFixed(w[0], "Spec · Tasks", withTopPad(linesSpecOverview(w[0], m), 1), innerLines)
+	col1 := renderLabeledCardFixedFocus(w[0], "Spec · Tasks", withTopPad(linesSpecOverview(w[0], m), 1), innerLines, m.focusedPane == 0)
 	// Column 2: Config overview (CLI + Models + MCP) — add top padding
-	col2 := renderLabeledCardFixed(w[1], "配置总览", withTopPad(linesConfigOverview(w[1], m), 1), innerLines)
+	col2 := renderLabeledCardFixedFocus(w[1], "配置总览", withTopPad(linesConfigOverview(w[1], m), 1), innerLines, m.focusedPane == 1)
 	// Column 3: Operations list (flattened actions)
 	// Hide the embedded colored title for this card by passing an empty title
-	col3 := renderLabeledCardFixed(w[2], "", linesOpsEmbedded(w[2], innerLines, m), innerLines)
+	col3 := renderLabeledCardFixedFocus(w[2], "", linesOpsEmbedded(w[2], innerLines, m), innerLines, m.focusedPane == 2)
 	return joinCols([]string{col1, col2, col3}, w, gap)
 }
 
@@ -82,17 +82,13 @@ func calcInnerWidths(totalW, cols, gap int) []int {
 }
 
 // renderLabeledCard draws a title line above a bordered box. Content lines are rendered inside.
-func renderLabeledCard(inner int, title string, lines []string) string {
-	if inner < 16 {
-		inner = 16
-	}
-	t := strings.TrimSpace(title)
-	return renderTitledBox(inner, t, lines)
-}
-
 // renderLabeledCardFixed draws a title line above a bordered box, fixing the
 // content area to exactly innerLines lines (padding or clipping as needed).
-func renderLabeledCardFixed(inner int, title string, lines []string, innerLines int) string {
+// (renderLabeledCardFixed removed; focus-aware version used)
+
+// renderLabeledCardFixedFocus draws a title line above a bordered box, fixing
+// height and allowing a highlight border when focused.
+func renderLabeledCardFixedFocus(inner int, title string, lines []string, innerLines int, focused bool) string {
 	if inner < 16 {
 		inner = 16
 	}
@@ -100,21 +96,24 @@ func renderLabeledCardFixed(inner int, title string, lines []string, innerLines 
 		innerLines = 1
 	}
 	t := strings.TrimSpace(title)
+	if focused {
+		return renderTitledBoxFixedWithBorder(inner, t, lines, innerLines, Vitesse.Primary)
+	}
 	return renderTitledBoxFixed(inner, t, lines, innerLines)
 }
 
 // renderTitledBox draws a card with the title embedded on the top border.
-func renderTitledBox(inner int, title string, lines []string) string {
-	// Build body (sides + bottom) with lipgloss; top border handled manually with title.
-	body := renderBodyBox(inner, lines, 0)
-	top := renderTopBorderWithTitle(inner, title)
-	return top + "\n" + body
-}
-
 // renderTitledBoxFixed draws a fixed-height content card with title on the top border.
 func renderTitledBoxFixed(inner int, title string, lines []string, innerLines int) string {
-	body := renderBodyBox(inner, lines, innerLines)
-	top := renderTopBorderWithTitle(inner, title)
+    body := renderBodyBox(inner, lines, innerLines)
+    top := renderTopBorderWithTitle(inner, title)
+    return top + "\n" + body
+}
+
+// renderTitledBoxFixedWithBorder is like renderTitledBoxFixed but with a custom border color.
+func renderTitledBoxFixedWithBorder(inner int, title string, lines []string, innerLines int, borderColor lipgloss.Color) string {
+	body := renderBodyBoxWithBorder(inner, lines, innerLines, borderColor)
+	top := renderTopBorderWithTitleColor(inner, title, borderColor)
 	return top + "\n" + body
 }
 
@@ -164,6 +163,51 @@ func renderBodyBox(inner int, lines []string, fixedLines int) string {
 	return card.Render(content)
 }
 
+// renderBodyBoxWithBorder renders a box (no top border) with a custom border color.
+func renderBodyBoxWithBorder(inner int, lines []string, fixedLines int, borderColor lipgloss.Color) string {
+	if inner < 1 {
+		inner = 1
+	}
+	padLeft := 2
+	cw := inner - padLeft
+	if cw < 1 {
+		cw = 1
+	}
+	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
+	var content string
+	if fixedLines > 0 {
+		rows := make([]string, fixedLines)
+		for i := 0; i < fixedLines; i++ {
+			var ln string
+			if i < len(lines) {
+				ln = lines[i]
+			}
+			rows[i] = contentStyle.Render(ln)
+		}
+		content = strings.Join(rows, "\n")
+	} else {
+		rows := make([]string, 0, maxInt(1, len(lines)))
+		if len(lines) == 0 {
+			rows = append(rows, contentStyle.Render(""))
+		} else {
+			for _, ln := range lines {
+				rows = append(rows, contentStyle.Render(ln))
+			}
+		}
+		content = strings.Join(rows, "\n")
+	}
+	card := lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Background(Vitesse.Bg).
+		BorderTop(false).BorderLeft(true).BorderRight(true).BorderBottom(true).
+		Width(inner)
+	if fixedLines > 0 {
+		card = card.Height(fixedLines)
+	}
+	return card.Render(content)
+}
+
 // renderTopBorderWithTitle composes the top border line with the title embedded.
 func renderTopBorderWithTitle(inner int, title string) string {
 	if inner < 1 {
@@ -181,6 +225,38 @@ func renderTopBorderWithTitle(inner int, title string) string {
 	// Draw at least one dash before the title to make the header obvious.
 	leftFill := 1
 	// Max title width considering: left dashes + space + title + space + right dashes = inner
+	maxTitleW := inner - leftFill - 2
+	if maxTitleW < 0 {
+		maxTitleW = 0
+	}
+	if tW > maxTitleW {
+		tStyled = clipToWidth(tStyled, maxTitleW)
+		tW = xansi.StringWidth(tStyled)
+	}
+	rightFill := inner - leftFill - tW - 2
+	if rightFill < 1 {
+		rightFill = 1
+	}
+	left := border.Render("╭")
+	pre := border.Render(strings.Repeat("─", leftFill) + " ")
+	post := border.Render(" " + strings.Repeat("─", rightFill) + "╮")
+	return left + pre + tStyled + post
+}
+
+// renderTopBorderWithTitleColor composes the top border line with the title embedded,
+// using the provided border color.
+func renderTopBorderWithTitleColor(inner int, title string, color lipgloss.Color) string {
+	if inner < 1 {
+		inner = 1
+	}
+	border := lipgloss.NewStyle().Foreground(color)
+	t := strings.TrimSpace(title)
+	if t == "" {
+		return border.Render("╭" + strings.Repeat("─", inner) + "╮")
+	}
+	tStyled := AccentBold().Render(t)
+	tW := xansi.StringWidth(tStyled)
+	leftFill := 1
 	maxTitleW := inner - leftFill - 2
 	if maxTitleW < 0 {
 		maxTitleW = 0
@@ -221,67 +297,7 @@ func clipToWidth(s string, maxW int) string {
 }
 
 // renderBox draws a bordered box with given inner width and content lines.
-func renderBox(inner int, lines []string) string {
-	if inner < 1 {
-		inner = 1
-	}
-	// Slight left indent for content
-	padLeft := 2
-	cw := inner - padLeft
-	if cw < 1 {
-		cw = 1
-	}
-	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
-	rows := make([]string, 0, maxInt(1, len(lines)))
-	if len(lines) == 0 {
-		rows = append(rows, contentStyle.Render(""))
-	} else {
-		for _, ln := range lines {
-			rows = append(rows, contentStyle.Render(ln))
-		}
-	}
-	content := strings.Join(rows, "\n")
-	// Card style with border and background
-	card := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(Vitesse.Border).
-		Background(Vitesse.Bg).
-		Width(inner)
-	return card.Render(content)
-}
-
-// renderBoxFixed draws a bordered box with given inner width and exactly
-// innerLines content lines, padding/truncating the provided lines.
-func renderBoxFixed(inner int, lines []string, innerLines int) string {
-	if inner < 1 {
-		inner = 1
-	}
-	if innerLines < 1 {
-		innerLines = 1
-	}
-	padLeft := 2
-	cw := inner - padLeft
-	if cw < 1 {
-		cw = 1
-	}
-	contentStyle := lipgloss.NewStyle().PaddingLeft(padLeft).Width(cw)
-	rows := make([]string, innerLines)
-	for i := 0; i < innerLines; i++ {
-		var ln string
-		if i < len(lines) {
-			ln = lines[i]
-		}
-		rows[i] = contentStyle.Render(ln)
-	}
-	content := strings.Join(rows, "\n")
-	card := lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(Vitesse.Border).
-		Background(Vitesse.Bg).
-		Width(inner).
-		Height(innerLines)
-	return card.Render(content)
-}
+// (renderBox variants removed; consolidated into renderBodyBox family)
 
 // joinCols aligns multiple card blocks horizontally with fixed gap.
 func joinCols(cols []string, innerWidths []int, gap int) string {
@@ -340,7 +356,7 @@ func linesSpecStats(m model) []string {
 		lines = append(lines, "暂无 spec")
 		return lines
 	}
-	lines = append(lines, fmt.Sprintf("总数: %d", total))
+	lines = append(lines, fmt.Sprintf("Total: %d", total))
 	if c.SpecDraft > 0 {
 		lines = append(lines, fmt.Sprintf("Draft: %d", c.SpecDraft))
 	}
@@ -359,21 +375,9 @@ func linesSpecStats(m model) []string {
 	return lines
 }
 
-func linesRecentSpecs(m model) []string {
-	arr := m.config.SpecRecentAccepted
-	if len(arr) == 0 {
-		return []string{"暂无已完成 spec"}
-	}
-	lines := make([]string, 0, len(arr))
-	for _, t := range arr {
-		lines = append(lines, "• "+t)
-	}
-	return lines
-}
-
 // linesRecentSpecsTable renders a small two-column table: [#] [标题]
 func linesRecentSpecsTable(inner int, m model) []string {
-	arr := m.config.SpecRecentAccepted
+    arr := m.config.SpecRecent
 	// content width inside card (account for left padding in box)
 	cw := inner - 2
 	if cw < 8 {
@@ -389,39 +393,6 @@ func linesRecentSpecsTable(inner int, m model) []string {
 		}
 	}
 	return renderTable(cw, headers, rows)
-}
-
-func linesCliStatus(m model) []string {
-	// Summarize three tools
-	ids := []tools.ToolID{tools.ToolCodex, tools.ToolClaude, tools.ToolGemini}
-	lines := []string{}
-	for _, id := range ids {
-		res, ok := m.results[id]
-		name := string(id)
-		if !ok && m.checking {
-			lines = append(lines, fmt.Sprintf("%-7s: 检测中…", name))
-			continue
-		}
-		if !res.Installed {
-			if res.Latest != "" {
-				lines = append(lines, fmt.Sprintf("%-7s: 未安装 (最新 %s)", name, res.Latest))
-			} else {
-				lines = append(lines, fmt.Sprintf("%-7s: 未安装", name))
-			}
-			continue
-		}
-		ver := res.Version
-		if ver == "" {
-			ver = "(未知版本)"
-		}
-		if res.Latest != "" && isLess(res.Version, res.Latest) {
-			red := lipgloss.NewStyle().Foreground(Vitesse.Red).Render
-			lines = append(lines, fmt.Sprintf("%-7s: %s → %s", name, ver, red(res.Latest)))
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("%-7s: %s", name, ver))
-	}
-	return lines
 }
 
 // linesCliStatusTable renders a table for codex/claude/gemini status.
@@ -631,13 +602,6 @@ func renderTable(cw int, headers []string, rows [][]string) []string {
 	return out
 }
 
-func linesSlogan() []string {
-	return []string{
-		"Maybe Spec‑Driven Development is all your need",
-		"聚焦规范驱动，工具沉底，协作可验证。",
-	}
-}
-
 func linesModels(m model) []string {
 	if m.config.ModelsCount == 0 || len(m.config.Models) == 0 {
 		return []string{"暂无已选择的模型"}
@@ -660,54 +624,4 @@ func linesMCP(m model) []string {
 	return lines
 }
 
-func renderCard(inner int, title, desc, cta string) string {
-	// border width equals inner content width; top+bottom lines added by caller
-	top := "╭" + strings.Repeat("─", inner) + "╮\n"
-	bot := "╰" + strings.Repeat("─", inner) + "╯\n"
-	// Title emphasized
-	titleStyled := AccentBold().Render(title)
-	// Compose content lines, trim to inner width safely
-	trim := func(s string) string {
-		if xansi.StringWidth(s) <= inner {
-			return s
-		}
-		// naive trim by bytes
-		if len(s) > inner {
-			return s[:inner]
-		}
-		return s
-	}
-	var b strings.Builder
-	b.WriteString(top)
-	// Title line
-	line := "  " + titleStyled
-	pad := inner - xansi.StringWidth(line)
-	if pad < 0 {
-		pad = 0
-	}
-	b.WriteString("│" + trim(line) + strings.Repeat(" ", pad) + "│\n")
-	// Desc line
-	dline := "  " + desc
-	pad = inner - xansi.StringWidth(dline)
-	if pad < 0 {
-		pad = 0
-	}
-	b.WriteString("│" + trim(dline) + strings.Repeat(" ", pad) + "│\n")
-	// CTA line
-	cline := "  " + cta
-	pad = inner - xansi.StringWidth(cline)
-	if pad < 0 {
-		pad = 0
-	}
-	b.WriteString("│" + trim(cline) + strings.Repeat(" ", pad) + "│\n")
-	b.WriteString(bot)
-	return b.String()
-}
-
-// style helper reused in cards
-func hlButton(s string) string {
-	return Button(s)
-}
-
-// Small helpers for version compare (avoid importing tools here)
-func isLess(a, b string) bool { return a != b }
+// (misc unused helpers removed)

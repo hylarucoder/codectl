@@ -18,7 +18,7 @@ func Autocomplete() error {
 }
 
 type gotReposSuccessMsg []repo
-type gotReposErrMsg error
+// gotReposErrMsg removed (unused)
 
 type repo struct {
 	Name string `json:"name"`

@@ -16,7 +16,7 @@ const (
 	tabInstall
 	tabUpdate
 	tabSync
-    tabClean
+	tabClean
 )
 
 func (t tabKind) String() string {
@@ -36,46 +36,7 @@ func (t tabKind) String() string {
 	}
 }
 
-func renderTabs(width int, active tabKind) string {
-	w := width
-	if w <= 0 {
-		w = 100
-	}
-	inner := w
-
-	base := lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236")).Padding(0, 1)
-	hl := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("86")).Padding(0, 1)
-
-    items := []struct {
-        k   tabKind
-        txt string
-    }{
-        {tabDash, "dash"},
-        {tabInstall, "install"},
-        {tabUpdate, "update"},
-        {tabSync, "sync"},
-        {tabClean, "clean"},
-    }
-
-	parts := make([]string, 0, len(items))
-	for _, it := range items {
-		if it.k == active {
-			parts = append(parts, hl.Render(it.txt))
-		} else {
-			parts = append(parts, base.Render(it.txt))
-		}
-	}
-	line := strings.Join(parts, " ")
-	// Trim if necessary
-	if xansi.StringWidth(line) > inner {
-		// Naively drop from the right until it fits
-		for len(parts) > 0 && xansi.StringWidth(strings.Join(parts, " ")) > inner {
-			parts = parts[:len(parts)-1]
-		}
-		line = strings.Join(parts, " ")
-	}
-	return line + "\n"
-}
+// renderTabs removed (not used in current dash-only UI)
 
 // renderBanner creates a welcome banner and can include additional lines inside the box.
 func renderBanner(cwd string, extra []string) string {
@@ -115,68 +76,11 @@ func renderBanner(cwd string, extra []string) string {
 }
 
 // renderInputBox draws a single-line bordered input hint box at the given width.
-func renderInputUI(width int, content string) string {
-	// Provide a reasonable fallback width
-	w := width
-	if w <= 0 {
-		w = 100
-	}
-	// Minimum box width to safely draw borders and one space
-	if w < 10 {
-		w = 10
-	}
-	inner := w - 2
-	// ANSI-safe width handled by lipgloss Width
-	border := BorderStyle()
-	fillBG := FillBG()
-	top := border.Render("╭"+strings.Repeat("─", inner)+"╮") + "\n"
-	bot := border.Render("╰"+strings.Repeat("─", inner)+"╯") + "\n"
-	var sb strings.Builder
-	sb.WriteString(top)
-	sb.WriteString(border.Render("│"))
-	sb.WriteString(fillBG.Width(inner).Render(content))
-	sb.WriteString(border.Render("│\n"))
-	sb.WriteString(bot)
-	return sb.String()
-}
+// renderInputUI removed (no persistent input box in dash)
 
 // renderStatusBar draws a single-line status bar at the given width
 // with left/right-aligned content.
-func renderStatusBar(width int, left, right string) string {
-	w := width
-	if w <= 0 {
-		w = 100
-	}
-	inner := w
-	// Ensure right fits, then trim left if necessary
-	lw := xansi.StringWidth(left)
-	rw := xansi.StringWidth(right)
-	if lw+rw > inner {
-		// space between sections at least 1 when possible
-		maxL := inner - rw - 1
-		if maxL < 0 {
-			maxL = 0
-		}
-		// naive rune-based trim to approx width
-		if xansi.StringWidth(left) > maxL {
-			// cut by bytes; acceptable for ASCII-heavy content
-			if maxL <= 1 {
-				left = ""
-			} else if len(left) > maxL {
-				left = left[:maxL]
-			}
-		}
-		lw = xansi.StringWidth(left)
-	}
-	pad := inner - lw - rw
-	if pad < 0 {
-		pad = 0
-	}
-	line := left + strings.Repeat(" ", pad) + right
-	// Vitesse Dark: fg and bg from design
-	style := lipgloss.NewStyle().Foreground(Vitesse.Secondary).Background(Vitesse.Bg)
-	return style.Render(line)
-}
+// renderStatusBar removed (status bar uses segmented style)
 
 // renderStatusBarStyled renders a segmented status bar where each segment has
 // its own background color. Left segments are left-aligned, right segments

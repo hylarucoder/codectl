@@ -563,15 +563,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focus == focusPreview {
 				if m.tab == tabExplorer {
 					if msg.String() == "j" {
-						m.mdVP.LineDown(1)
+                            m.mdVP.ScrollDown(1)
 					} else {
-						m.mdVP.LineUp(1)
+                            m.mdVP.ScrollUp(1)
 					}
 				} else if m.tab == tabDiff {
 					if msg.String() == "j" {
-						m.diffVP.LineDown(1)
+                            m.diffVP.ScrollDown(1)
 					} else {
-						m.diffVP.LineUp(1)
+                            m.diffVP.ScrollUp(1)
 					}
 				} else {
 					// Work tab: no scrollable viewport on right
@@ -1321,19 +1321,12 @@ func (m *model) recalcViewports() {
 	} else if mdH > 0 {
 		mdH = 1
 	}
-	lgW, lgH := 0, 0
-	if mdW < 10 {
-		mdW = lw
-	}
-	if mdH < 3 {
-		mdH = topH
-	}
-	if lgW < 10 {
-		lgW = rw
-	}
-	if lgH < 3 {
-		lgH = topH
-	}
+    if mdW < 10 {
+        mdW = lw
+    }
+    if mdH < 3 {
+        mdH = topH
+    }
 	if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
 		m.mdVP = viewport.New(mdW, mdH)
 	} else {
@@ -2391,7 +2384,7 @@ func containsPath(arr []string, want string) bool {
 func openInOSCmd(path string) tea.Cmd {
     return func() tea.Msg {
         exe := ""
-        args := []string{}
+        var args []string
         switch runtime.GOOS {
         case "darwin":
             exe = "open"

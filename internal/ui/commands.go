@@ -23,21 +23,6 @@ func checkAllCmd() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func upgradeAllCmd() tea.Cmd {
-	cmds := make([]tea.Cmd, 0, len(tools.Tools))
-	for _, t := range tools.Tools {
-		if t.Package == "" {
-			continue
-		}
-		tt := t
-		cmds = append(cmds, upgradeOneCmd(tt))
-	}
-	if len(cmds) == 0 {
-		return nil
-	}
-	return tea.Batch(cmds...)
-}
-
 func upgradeOneCmd(t tools.ToolInfo) tea.Cmd {
 	return func() tea.Msg {
 		// initial check
