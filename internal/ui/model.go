@@ -64,6 +64,9 @@ type model struct {
 	// right-side operations panel (grouped list)
 	ops list.Model
 
+	// selection state for dash recent specs table
+	recentIndex int
+
 	// quit confirmation overlay
 	confirmQuit  bool
 	confirmIndex int // 0 = confirm, 1 = cancel

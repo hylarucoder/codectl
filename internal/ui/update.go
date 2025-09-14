@@ -240,6 +240,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			// Recent specs table navigation when left pane is focused
+			if m.focusedPane == 0 {
+				switch msg.Type {
+				case tea.KeyUp:
+					if len(m.config.SpecRecent) > 0 {
+						m.recentIndex--
+						if m.recentIndex < 0 {
+							m.recentIndex = len(m.config.SpecRecent) - 1
+						}
+					}
+					return m, nil
+				case tea.KeyDown:
+					if len(m.config.SpecRecent) > 0 {
+						m.recentIndex++
+						if m.recentIndex >= len(m.config.SpecRecent) {
+							m.recentIndex = 0
+						}
+					}
+					return m, nil
+				}
+				if msg.Type == tea.KeyEnter && len(m.config.SpecRecent) > 0 {
+					path := ""
+					if m.recentIndex < len(m.config.SpecRecentPaths) {
+						path = m.config.SpecRecentPaths[m.recentIndex]
+					}
+					if strings.TrimSpace(path) != "" {
+						return m, m.execSlashCmd("/specui", path, false)
+					}
+					return m, m.execSlashCmd("/specui", "", false)
+				}
+			}
 			// Route ops list navigation keys only when Ops pane is focused
 			if m.focusedPane == 2 {
 				switch msg.Type {
@@ -295,6 +326,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case configInfoMsg:
 		m.config = msg.info
+		if m.recentIndex >= len(m.config.SpecRecent) {
+			if len(m.config.SpecRecent) == 0 {
+				m.recentIndex = 0
+			} else {
+				m.recentIndex = len(m.config.SpecRecent) - 1
+			}
+		}
 		return m, nil
 	case startUpgradeMsg:
 		if m.upgrading {

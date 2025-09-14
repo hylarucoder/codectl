@@ -32,14 +32,15 @@ type ConfigInfo struct {
 	MCPErr   string
 
 	// Spec stats (from vibe-docs/spec)
-	SpecDir        string
-	SpecTotal      int
-	SpecDraft      int
-	SpecProposal   int
-	SpecAccepted   int
-	SpecDeprecated int
-	SpecRetired    int
-	SpecRecent     []string // recent spec titles or filenames
+	SpecDir         string
+	SpecTotal       int
+	SpecDraft       int
+	SpecProposal    int
+	SpecAccepted    int
+	SpecDeprecated  int
+	SpecRetired     int
+	SpecRecent      []string // recent spec titles or filenames
+	SpecRecentPaths []string // matching file paths for SpecRecent
 
 	CheckedAt time.Time
 }
@@ -123,6 +124,7 @@ func scanSpecStats(info *ConfigInfo) {
 		status  string
 		mtime   time.Time
 		display string
+		path    string
 	}
 	var recent []rec
 	for _, de := range entries {
@@ -190,21 +192,22 @@ func scanSpecStats(info *ConfigInfo) {
 		case "retired":
 			info.SpecRetired++
 		}
-        // compute title (fall back to filename)
-        if title == "" {
-            title = strings.TrimSuffix(name, ".mdx")
-        }
+		// compute title (fall back to filename)
+		if title == "" {
+			title = strings.TrimSuffix(name, ".mdx")
+		}
 		// mtime
 		var mt time.Time
 		if fi, err := os.Stat(path); err == nil {
 			mt = fi.ModTime()
 		}
 		// collect all specs for recent table (regardless of status)
-        recent = append(recent, rec{title: title, status: status, mtime: mt, display: title})
+		recent = append(recent, rec{title: title, status: status, mtime: mt, display: title, path: path})
 	}
 	// Sort all by mtime desc and keep top 5
 	sort.Slice(recent, func(i, j int) bool { return recent[i].mtime.After(recent[j].mtime) })
 	for i := 0; i < len(recent) && i < 5; i++ {
 		info.SpecRecent = append(info.SpecRecent, recent[i].display)
+		info.SpecRecentPaths = append(info.SpecRecentPaths, recent[i].path)
 	}
 }

@@ -59,13 +59,13 @@ var checkCmd = &cobra.Command{
 				continue
 			}
 			rep.Dirs = append(rep.Dirs, d)
-            // walk
-            if err := filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
-                if err != nil {
-                    rep.Items = append(rep.Items, checkItem{Path: path, Errors: []string{err.Error()}})
-                    rep.Errors++
-                    return nil
-                }
+			// walk
+			if err := filepath.WalkDir(d, func(path string, de os.DirEntry, err error) error {
+				if err != nil {
+					rep.Items = append(rep.Items, checkItem{Path: path, Errors: []string{err.Error()}})
+					rep.Errors++
+					return nil
+				}
 				if de.IsDir() {
 					return nil
 				}
@@ -81,12 +81,12 @@ var checkCmd = &cobra.Command{
 					rep.Warnings += len(it.Warnings)
 				}
 				rep.Items = append(rep.Items, it)
-                return nil
-            }); err != nil {
-                rep.Items = append(rep.Items, checkItem{Path: d, Errors: []string{err.Error()}})
-                rep.Errors++
-            }
-        }
+				return nil
+			}); err != nil {
+				rep.Items = append(rep.Items, checkItem{Path: d, Errors: []string{err.Error()}})
+				rep.Errors++
+			}
+		}
 
 		if checkJSON {
 			// pretty JSON to stdout

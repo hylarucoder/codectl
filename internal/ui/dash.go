@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 
@@ -33,9 +34,11 @@ func renderDashThreeColsFixed(m model, innerLines int) string {
 	gap := 2
 	w := calcInnerWidths(W, 3, gap)
 	// Column 1: Spec/Task view (stats + recent accepted) — add top padding
-	col1 := renderLabeledCardFixedFocus(w[0], "Spec · Tasks", withTopPad(linesSpecOverview(w[0], m), 1), innerLines, m.focusedPane == 0)
+	col1Title := strings.TrimSpace(IconSpecTasks() + "  Spec · Tasks")
+	col1 := renderLabeledCardFixedFocus(w[0], col1Title, withTopPad(linesSpecOverview(w[0], m), 1), innerLines, m.focusedPane == 0)
 	// Column 2: Config overview (CLI + Models + MCP) — add top padding
-	col2 := renderLabeledCardFixedFocus(w[1], "配置总览", withTopPad(linesConfigOverview(w[1], m), 1), innerLines, m.focusedPane == 1)
+	col2Title := strings.TrimSpace(IconConfig() + "  配置总览")
+	col2 := renderLabeledCardFixedFocus(w[1], col2Title, withTopPad(linesConfigOverview(w[1], m), 1), innerLines, m.focusedPane == 1)
 	// Column 3: Operations list (flattened actions)
 	// Hide the embedded colored title for this card by passing an empty title
 	col3 := renderLabeledCardFixedFocus(w[2], "", linesOpsEmbedded(w[2], innerLines, m), innerLines, m.focusedPane == 2)
@@ -105,9 +108,9 @@ func renderLabeledCardFixedFocus(inner int, title string, lines []string, innerL
 // renderTitledBox draws a card with the title embedded on the top border.
 // renderTitledBoxFixed draws a fixed-height content card with title on the top border.
 func renderTitledBoxFixed(inner int, title string, lines []string, innerLines int) string {
-    body := renderBodyBox(inner, lines, innerLines)
-    top := renderTopBorderWithTitle(inner, title)
-    return top + "\n" + body
+	body := renderBodyBox(inner, lines, innerLines)
+	top := renderTopBorderWithTitle(inner, title)
+	return top + "\n" + body
 }
 
 // renderTitledBoxFixedWithBorder is like renderTitledBoxFixed but with a custom border color.
@@ -230,7 +233,7 @@ func renderTopBorderWithTitle(inner int, title string) string {
 		maxTitleW = 0
 	}
 	if tW > maxTitleW {
-		tStyled = clipToWidth(tStyled, maxTitleW)
+		tStyled = xansi.Truncate(tStyled, maxTitleW, "")
 		tW = xansi.StringWidth(tStyled)
 	}
 	rightFill := inner - leftFill - tW - 2
@@ -262,7 +265,7 @@ func renderTopBorderWithTitleColor(inner int, title string, color lipgloss.Color
 		maxTitleW = 0
 	}
 	if tW > maxTitleW {
-		tStyled = clipToWidth(tStyled, maxTitleW)
+		tStyled = xansi.Truncate(tStyled, maxTitleW, "")
 		tW = xansi.StringWidth(tStyled)
 	}
 	rightFill := inner - leftFill - tW - 2
@@ -276,25 +279,7 @@ func renderTopBorderWithTitleColor(inner int, title string, color lipgloss.Color
 }
 
 // clipToWidth trims a string to the given display width (ANSI-safe).
-func clipToWidth(s string, maxW int) string {
-	if maxW <= 0 {
-		return ""
-	}
-	if xansi.StringWidth(s) <= maxW {
-		return s
-	}
-	var b strings.Builder
-	w := 0
-	for _, r := range s {
-		rw := xansi.StringWidth(string(r))
-		if w+rw > maxW {
-			break
-		}
-		b.WriteRune(r)
-		w += rw
-	}
-	return b.String()
-}
+// clipToWidth removed; use xansi.Truncate for ANSI-safe width
 
 // renderBox draws a bordered box with given inner width and content lines.
 // (renderBox variants removed; consolidated into renderBodyBox family)
@@ -356,43 +341,94 @@ func linesSpecStats(m model) []string {
 		lines = append(lines, "暂无 spec")
 		return lines
 	}
-	lines = append(lines, fmt.Sprintf("Total: %d", total))
+	lines = append(lines, fmt.Sprintf("%s Total: %d", IconTotal(), total))
 	if c.SpecDraft > 0 {
-		lines = append(lines, fmt.Sprintf("Draft: %d", c.SpecDraft))
+		lines = append(lines, fmt.Sprintf("%s Draft: %d", IconDraft(), c.SpecDraft))
 	}
 	if c.SpecProposal > 0 {
-		lines = append(lines, fmt.Sprintf("Proposal: %d", c.SpecProposal))
+		lines = append(lines, fmt.Sprintf("%s Proposal: %d", IconProposal(), c.SpecProposal))
 	}
 	if c.SpecAccepted > 0 {
-		lines = append(lines, fmt.Sprintf("Accepted: %d", c.SpecAccepted))
+		lines = append(lines, fmt.Sprintf("%s Accepted: %d", IconAccepted(), c.SpecAccepted))
 	}
 	if c.SpecDeprecated > 0 {
-		lines = append(lines, fmt.Sprintf("Deprecated: %d", c.SpecDeprecated))
+		lines = append(lines, fmt.Sprintf("%s Deprecated: %d", IconDeprecated(), c.SpecDeprecated))
 	}
 	if c.SpecRetired > 0 {
-		lines = append(lines, fmt.Sprintf("Retired: %d", c.SpecRetired))
+		lines = append(lines, fmt.Sprintf("%s Retired: %d", IconRetired(), c.SpecRetired))
 	}
 	return lines
 }
 
 // linesRecentSpecsTable renders a small two-column table: [#] [标题]
 func linesRecentSpecsTable(inner int, m model) []string {
-    arr := m.config.SpecRecent
+	arr := m.config.SpecRecent
 	// content width inside card (account for left padding in box)
 	cw := inner - 2
-	if cw < 8 {
-		cw = inner // fallback
+	if cw < 12 {
+		cw = inner
 	}
-	headers := []string{"#", "标题"}
-	rows := make([][]string, 0, len(arr))
+	// columns: index + title; clamp widths to content width
+	idxW := 3
+	titleW := cw - idxW - 1
+	if titleW < 6 {
+		titleW = 6
+	}
+	cols := []table.Column{
+		{Title: "#", Width: idxW},
+		{Title: strings.TrimSpace(IconDoc() + " 标题"), Width: titleW},
+	}
+	t := table.New(table.WithColumns(cols))
+	// rows
+	var trows []table.Row
 	if len(arr) == 0 {
-		rows = append(rows, []string{"-", "暂无已完成 spec"})
+		trows = append(trows, table.Row{"-", "暂无已完成 spec"})
 	} else {
-		for i, t := range arr {
-			rows = append(rows, []string{fmt.Sprintf("%d", i+1), t})
+		for i, s := range arr {
+			trows = append(trows, table.Row{fmt.Sprintf("%d", i+1), s})
 		}
 	}
-	return renderTable(cw, headers, rows)
+	t.SetRows(trows)
+	// styles fit Vitesse theme; disable extras
+	st := table.DefaultStyles()
+	st.Header = st.Header.
+		Bold(true).
+		Foreground(Vitesse.Text)
+	st.Cell = st.Cell.
+		Foreground(Vitesse.Text)
+	st.Selected = st.Selected.
+		Foreground(Vitesse.OnAccent).
+		Background(Vitesse.Primary)
+	t.SetStyles(st)
+	// selection
+	if m.recentIndex >= 0 && m.recentIndex < len(trows) {
+		t.SetCursor(m.recentIndex)
+	}
+	// height hint: header + up to 6 rows to avoid overflow
+	h := 1
+	if n := len(trows); n > 0 {
+		if n > 6 {
+			n = 6
+		}
+		h += n
+	}
+	if h < 2 {
+		h = 2
+	}
+	t.SetHeight(h)
+	// Render and split into lines for our card box
+	view := t.View()
+	// Ensure width does not exceed cw
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		// ANSI-safe truncate (Bubble Table obeys widths; extra safety)
+		if xansi.StringWidth(ln) > cw {
+			ln = xansi.Truncate(ln, cw, "")
+		}
+		out = append(out, ln)
+	}
+	return out
 }
 
 // linesCliStatusTable renders a table for codex/claude/gemini status.
@@ -550,7 +586,7 @@ func renderTable(cw int, headers []string, rows [][]string) []string {
 		remaining -= w
 		remainCols--
 	}
-	// clip/pad cell to width
+	// clip/pad cell to width (ANSI-safe)
 	clip := func(s string, w int) string {
 		if w <= 0 {
 			return ""
@@ -562,20 +598,10 @@ func renderTable(cw int, headers []string, rows [][]string) []string {
 		if sw < w {
 			return s + strings.Repeat(" ", w-sw)
 		}
-		// trim runes until fit (rough, but ANSI-safe width check below)
-		var b strings.Builder
-		count := 0
-		for _, r := range s {
-			// treat most runes width=1; xansi width used for final padding
-			if count+1 > w {
-				break
-			}
-			b.WriteRune(r)
-			count++
-		}
-		out := b.String()
-		if xansi.StringWidth(out) < w {
-			out += strings.Repeat(" ", w-xansi.StringWidth(out))
+		out := xansi.Truncate(s, w, "")
+		// ensure exact width (defensive pad)
+		if d := w - xansi.StringWidth(out); d > 0 {
+			out += strings.Repeat(" ", d)
 		}
 		return out
 	}

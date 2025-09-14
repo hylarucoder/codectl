@@ -9,9 +9,9 @@ import (
 
 // opsItem represents an item in the right-side operations panel.
 type opsItem struct {
-    title    string
-    desc     string
-    cmd      string // slash command to execute (e.g., "/specui"); empty means non-action header
+	title string
+	desc  string
+	cmd   string // slash command to execute (e.g., "/specui"); empty means non-action header
 }
 
 func (i opsItem) Title() string       { return i.title }

@@ -1,9 +1,9 @@
 package mcp
 
 import (
-    "testing"
+	"testing"
 
-    tu "codectl/internal/testutil"
+	tu "codectl/internal/testutil"
 )
 
 // withEnv removed (unused; use internal/testutil.WithEnv)

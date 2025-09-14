@@ -206,22 +206,22 @@ func (m model) renderStatusBarLine() string {
 	}
 	if m.hintText != "" && now.Before(m.hintUntil) {
 		leftParts := []string{m.hintText}
-		rightParts := []string{appver.AppVersion}
+		rightParts := []string{IconVersion() + " v" + appver.AppVersion}
 		return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"
 	}
-	leftParts := []string{"codectl", now.Format("15:04")}
+	leftParts := []string{IconTerminal() + " codectl", IconClock() + " " + now.Format("15:04")}
 	// right segments: version + git info (if available)
-	rightParts := []string{"v" + appver.AppVersion}
+	rightParts := []string{IconVersion() + " v" + appver.AppVersion}
 	if m.git.InRepo {
-		rightParts = append(rightParts, "git")
+		rightParts = append(rightParts, IconGit())
 		if m.git.Branch != "" {
-			rightParts = append(rightParts, m.git.Branch)
+			rightParts = append(rightParts, IconBranch()+" "+m.git.Branch)
 		}
 		if m.git.ShortSHA != "" {
-			rightParts = append(rightParts, m.git.ShortSHA)
+			rightParts = append(rightParts, IconCommit()+" "+m.git.ShortSHA)
 		}
 		if m.git.Dirty {
-			rightParts = append(rightParts, "*")
+			rightParts = append(rightParts, IconDirty())
 		}
 	}
 	return renderStatusBarStyled(m.width, leftParts, rightParts) + "\n"

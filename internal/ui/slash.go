@@ -568,7 +568,18 @@ func (m model) execSlashCmd(cmd string, args string, quiet bool) tea.Cmd {
 			return func() tea.Msg { return noticeMsg("无法找到 codectl 可执行文件") }
 		}
 		cmd := exec.Command(bin, "spec")
-		cmd.Env = os.Environ()
+		// If args contains a path, pass it via SPECUI_OPEN_PATH
+		env := os.Environ()
+		if s := strings.TrimSpace(args); s != "" {
+			// only first token considered as path
+			parts := strings.Fields(s)
+			if len(parts) > 0 {
+				env = append(env, "SPECUI_OPEN_PATH="+parts[0])
+			}
+		}
+		// default to Explorer tab when opening a specific path
+		env = append(env, "SPECUI_DEFAULT_TAB=explorer")
+		cmd.Env = env
 		if quiet {
 			return tea.ExecProcess(cmd, func(err error) tea.Msg { return nil })
 		}

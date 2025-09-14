@@ -18,6 +18,7 @@ func Autocomplete() error {
 }
 
 type gotReposSuccessMsg []repo
+
 // gotReposErrMsg removed (unused)
 
 type repo struct {

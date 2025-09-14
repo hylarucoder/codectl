@@ -147,7 +147,7 @@ func renderLogoCardSized(totalWidth, totalHeight int) (string, int) {
 		colored := colorizeLine(ln)
 		w := xansi.StringWidth(colored)
 		if w > cw {
-			colored = clipToWidth(colored, cw)
+			colored = xansi.Truncate(colored, cw, "")
 			w = xansi.StringWidth(colored)
 		}
 		left := 0

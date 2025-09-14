@@ -34,10 +34,7 @@ func renderCommandPaletteTop(width int, value string, cmds []SlashCmd, sel int) 
 	valStyled := text.Render(value)
 	in := fmt.Sprintf(" %s %s", prompt, valStyled)
 	if xansi.StringWidth(in) > inner {
-		// naive trim by bytes; acceptable for ASCII-heavy input
-		if len(in) > inner {
-			in = in[:inner]
-		}
+		in = xansi.Truncate(in, inner, "")
 	}
 	// width handled by lipgloss .Width
 	// left border
@@ -58,9 +55,7 @@ func renderCommandPaletteTop(width int, value string, cmds []SlashCmd, sel int) 
 	if len(cmds) == 0 {
 		line := "  no matches"
 		if xansi.StringWidth(line) > inner {
-			if len(line) > inner {
-				line = line[:inner]
-			}
+			line = xansi.Truncate(line, inner, "")
 		}
 		b.WriteString(border.Render("│"))
 		b.WriteString(fillBG.Width(inner).Render(line))
@@ -73,9 +68,7 @@ func renderCommandPaletteTop(width int, value string, cmds []SlashCmd, sel int) 
 	for i, c := range cmds {
 		line := fmt.Sprintf("  %-*s  %s", nameWidth, c.Name, dim(c.Desc))
 		if xansi.StringWidth(line) > inner {
-			if len(line) > inner {
-				line = line[:inner]
-			}
+			line = xansi.Truncate(line, inner, "")
 		}
 		if i == sel {
 			line = hl(line)
