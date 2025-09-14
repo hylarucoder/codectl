@@ -1,5 +1,9 @@
 # CODECTL
 
+<p align="center">
+    <img src="https://github.com/user-attachments/assets/effc6bc1-ef96-49cc-8751-6f9d1052e248" width="800"/>
+<p>
+
 > SDD is all you need
 
 English documentation. 中文版请见：README.zh-cn.md
@@ -58,9 +62,12 @@ codectl provider schema         # Print JSON Schema of provider.json (for valida
 
 ## Roadmap
 
-- [ ] 1. Prototype
-- [ ] 2. Better Spec TUI
-- [ ] 3. Config Wizard (MCP/Custom Provider)
+- [ ] 
+    1. Prototype
+- [ ] 
+    2. Better Spec TUI
+- [ ] 
+    3. Config Wizard (MCP/Custom Provider)
 
 ## Development & Build
 
@@ -77,11 +84,14 @@ go run .
 go build -o codectl
 ```
 
-This project uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI. Contributions welcome: please consider updating specs in `vibe-docs/spec/` first, then submit implementation + docs.
+This project uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI. Contributions welcome: please
+consider updating specs in `vibe-docs/spec/` first, then submit implementation + docs.
 
 ## Disclaimer
 
-codectl helps you install, check, and configure third‑party tools; it does not provide model inference itself. The capabilities, stability, and terms of third‑party CLIs/MCPs are governed by their respective providers—review and follow their usage policies as needed.
+codectl helps you install, check, and configure third‑party tools; it does not provide model inference itself. The
+capabilities, stability, and terms of third‑party CLIs/MCPs are governed by their respective providers—review and follow
+their usage policies as needed.
 
 ## License
 

@@ -165,3 +165,52 @@ func colorizeLine(s string) string {
 	st := AccentBold()
 	return st.Render(s)
 }
+
+// renderLogoCard renders a full-width card at the top containing a centered
+// ASCII "CODECTL" banner. It returns the rendered string and the number of
+// lines the card occupies on screen.
+func renderLogoCard(totalWidth int) (string, int) {
+	if totalWidth <= 0 {
+		totalWidth = 80
+	}
+	// The card box outer width equals inner content width + 2 (borders).
+	inner := totalWidth - 2
+	if inner < 16 {
+		inner = 16
+	}
+
+	// Build banner lines and center them within the card's content area.
+	// Use ASCII-only variant with '#' glyphs to avoid non-ASCII blocks.
+	raw := composeLogoLines(asciiLogoBlocks(), false)
+	// renderBodyBox applies a left padding of 2; mirror that to compute centering.
+	padLeft := 2
+	cw := inner - padLeft
+	if cw < 1 {
+		cw = 1
+	}
+	lines := make([]string, len(raw))
+	for i, ln := range raw {
+		colored := colorizeLine(ln)
+		w := xansi.StringWidth(colored)
+		if w > cw {
+			// Trim to fit content width (ANSI-aware trimming via clipToWidth)
+			colored = clipToWidth(colored, cw)
+			w = xansi.StringWidth(colored)
+		}
+		left := 0
+		if cw > w {
+			left = (cw - w) / 2
+		}
+		lines[i] = strings.Repeat(" ", left) + colored
+	}
+
+	// Fixed content height equals number of banner rows
+	innerLines := len(lines)
+	if innerLines < 1 {
+		innerLines = 1
+	}
+	card := renderTitledBoxFixed(inner, "", lines, innerLines)
+	// Total visual height = top border + content rows + bottom border
+	height := innerLines + 2
+	return card, height
+}

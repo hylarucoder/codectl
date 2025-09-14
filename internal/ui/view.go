@@ -97,9 +97,8 @@ func (m model) View() string {
 	}
 	// Compose body content first; we'll pin status bar at bottom later
 	var body strings.Builder
-	// Single-screen: dash only (remove ASCII banner).
-	// Switch to a 3-column layout with a single row of equal-height cards.
-	// Keep two lines of top padding for breathing room.
+	// Single-screen: add a top logo card, then a 3-column layout with a
+	// single row of equal-height cards. Keep two lines of top padding.
 	topPad := 2 // overlay floats; don't push content
 	// Reserve space for message block and bottom status bar.
 	msgBlock := 2 // default when no message
@@ -116,6 +115,10 @@ func (m model) View() string {
 		h = 24
 	}
 	avail := h - msgBlock - bottomBar - rowSeps - topPad
+	// Reserve space for the top logo card and a separating blank line
+	// so the status bar can stay pinned to the bottom.
+	logoCardHeight := 8 // 6 content rows + top/bottom borders
+	avail -= logoCardHeight + 1
 	if avail < 6 {
 		avail = 6
 	}
@@ -131,6 +134,11 @@ func (m model) View() string {
 	// actual top padding lines
 	if topPad > 0 {
 		body.WriteString(strings.Repeat("\n", topPad))
+	}
+	// Render the top ASCII CODECTL card
+	if card, _ := renderLogoCard(m.width); card != "" {
+		body.WriteString(card)
+		body.WriteString("\n")
 	}
 	// Render dashboard grid only (no external right panel)
 	body.WriteString(renderDashFixed(m, innerLines))

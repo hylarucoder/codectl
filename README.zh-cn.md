@@ -1,6 +1,10 @@
 # CODECTL
 
-> SDD is all your need
+<p align="center">
+    <img src="https://github.com/user-attachments/assets/effc6bc1-ef96-49cc-8751-6f9d1052e248" width="800"/>
+<p>
+
+> SDD is all you need
 
 中文文档。English version: README.md
 

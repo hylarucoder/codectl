@@ -46,7 +46,7 @@ var Vitesse = designTheme{
 	Secondary: lipgloss.Color("#bfbaaa"),
 	Muted:     lipgloss.Color("#dedcd590"),
 
-	Bg:     lipgloss.Color("#222"),
+	Bg:     lipgloss.Color("#181818"),
 	BgSoft: lipgloss.Color("#292929"),
 	Border: lipgloss.Color("#252525"),
 
