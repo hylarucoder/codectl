@@ -33,14 +33,26 @@ func renderDashThreeColsFixed(m model, innerLines int) string {
 	}
 	gap := 2
 	w := calcInnerWidths(W, 3, gap)
-	// Column 1: Spec/Task view (stats + recent accepted)
-	col1 := renderLabeledCardFixed(w[0], "Spec · Tasks", linesSpecOverview(w[0], m), innerLines)
-	// Column 2: Config overview (CLI + Models + MCP)
-	col2 := renderLabeledCardFixed(w[1], "配置总览", linesConfigOverview(w[1], m), innerLines)
+    // Column 1: Spec/Task view (stats + recent accepted) — add top padding
+    col1 := renderLabeledCardFixed(w[0], "Spec · Tasks", withTopPad(linesSpecOverview(w[0], m), 1), innerLines)
+    // Column 2: Config overview (CLI + Models + MCP) — add top padding
+    col2 := renderLabeledCardFixed(w[1], "配置总览", withTopPad(linesConfigOverview(w[1], m), 1), innerLines)
 	// Column 3: Operations list (flattened actions)
 	// Hide the embedded colored title for this card by passing an empty title
 	col3 := renderLabeledCardFixed(w[2], "", linesOpsEmbedded(w[2], innerLines, m), innerLines)
 	return joinCols([]string{col1, col2, col3}, w, gap)
+}
+
+// withTopPad returns a new slice with n empty lines prefixed before lines.
+func withTopPad(lines []string, n int) []string {
+    if n <= 0 {
+        return lines
+    }
+    pad := make([]string, n)
+    out := make([]string, 0, len(pad)+len(lines))
+    out = append(out, pad...)
+    out = append(out, lines...)
+    return out
 }
 
 // calcInnerWidths computes inner content widths (excluding the 2 border characters) for n columns.
