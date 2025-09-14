@@ -55,8 +55,11 @@ type model struct {
 	// env
 	cwd    string
 	root   string
-	width  int
-	height int
+    width  int
+    height int
+    // cached pane widths for stable layout
+    leftW  int
+    rightW int
 
 	// flow
 	page page
@@ -589,8 +592,15 @@ func (m model) View() string {
 			inputBox = boxStyleFocus
 		}
         // top: split left (file manager) and right (markdown)
-        left := leftBox.Render(m.fileTable.View())
-		left = zone.Mark("spec.files", left)
+        lw := m.leftW
+        rw := m.rightW
+        // Fixed-width render to avoid jitter when selection changes
+        innerLeft := lw - 2
+        if innerLeft < 1 { innerLeft = 1 }
+        innerRight := rw - 2
+        if innerRight < 1 { innerRight = 1 }
+        left := leftBox.Width(innerLeft).Render(m.fileTable.View())
+        left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
 		if m.selected != nil {
@@ -617,7 +627,7 @@ func (m model) View() string {
 			divider,
 			m.mdVP.View(),
 		)
-		right := rightBox.Render(rightInner)
+        right := rightBox.Width(innerRight).Render(rightInner)
 		right = zone.Mark("spec.preview", right)
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
@@ -715,6 +725,9 @@ func (m *model) recalcViewports() {
         lw = 20
     }
     rw := innerW - lw
+    // cache for stable rendering widths (total pane widths including borders)
+    m.leftW = lw
+    m.rightW = rw
 	if lw < 20 {
 		lw = 20
 	}
