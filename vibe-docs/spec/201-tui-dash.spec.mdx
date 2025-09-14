@@ -1,0 +1,96 @@
+---
+title: TUI — Dashboard 界面规范
+specVersion: 0.1.0
+status: draft
+lastUpdated: {auto}
+---
+
+# TUI — Dashboard 界面规范（草案）
+
+本规范描述 codectl 启动后的首页 Dashboard（简称 Dash）的布局、信息结构、交互与可达性要求，使其成为 SDD（Spec → Task → Coding）工作流的“总览与起点”。
+
+## 1. 目标与非目标
+- 目标
+  - 提供“规范/任务总览 + 配置与环境状态 + 快速操作”的单屏视图。
+  - 通过按钮与操作面板引导用户进入 Spec 工作台、设置与升级流程。
+  - 在终端窗口变化时保持布局稳定、信息密度可控。
+- 非目标
+  - 不承载长篇阅读/编辑（进入 Spec UI 完成）。
+  - 不展示详细日志（进入 Spec UI 或底部通知/日志视区）。
+
+## 2. 布局与样式
+- 三列卡片（3-column grid），卡片等高：
+  1) 左：Spec · Tasks（统计 + 最近 Accepted 列表 + 进入 SpecUI 按钮）
+  2) 中：配置总览（CLI 状态表 + 已选模型 + MCP 服务）
+  3) 右：操作面板（与右侧 Ops 列表一致的嵌入式视图）
+- 卡片标题嵌入于上边框，卡片内容左侧 2 字符内边距。
+- 列间距（gap）固定为 2 字符；内宽按终端宽度自适应切分。
+- 卡片高度：使用“固定内容行数”策略（MUST），避免不同卡片高度跳动导致行对齐破坏。
+
+## 3. 信息结构
+### 3.1 Spec · Tasks（左）
+- 统计（来自配置扫描/缓存）：
+  - MUST 展示总数 Total；SHOULD 展示 Draft/Proposal/Accepted/Deprecated/Retired 各状态计数（有值才显示）。
+- 最近已接受规范（Recent Accepted）：
+  - SHOULD 展示最近若干条（标题 + 文件名/编号），列宽自适应。
+- 行动入口：
+  - MUST 提供“打开 SpecUI”按钮（Zone: `dash.btn.specui`）。
+
+### 3.2 配置总览（中）
+- CLI 工具状态表（tools: Codex/Claude/Gemini）：
+  - 列：工具 | 安装 | 版本 | 最新（Latest）。
+  - 安装列：✓/×/…（… 表示检测中）。
+  - MUST 提供“Upgrade All”按钮（Zone: `dash.btn.upgrade`），触发统一升级流程；按钮下给出简短说明文案。
+- 已选模型列表（来自 `~/.codectl/models.json` 扁平清单）：
+  - 无数据时：显示“暂无已选择的模型”与“打开设置”按钮（Zone: `dash.btn.settings`）。
+- MCP 服务列表（来自 `~/.codectl/mcp.json` 名称列表）：
+  - 无数据时：显示“暂无 MCP 服务”与“打开设置”按钮（同上 Zone）。
+
+### 3.3 操作面板（右）
+- MUST 内嵌与右侧 Ops 列表同构的操作项（与主 TUI 右栏一致），支持键盘选中与回车执行。
+- SHOULD 以“首要操作”优先排序（如：诊断、统一升级、打开 SpecUI、打开设置、同步 provider.json 等）。
+
+## 4. 交互与键位
+- 全局
+  - `Ctrl+C`：退出。
+  - `Cmd/Ctrl+P`：打开命令面板（Slash Palette）。
+- 卡片按钮（Zones）
+  - `dash.btn.upgrade`：统一升级 CLI（效果等价 `/upgrade`）。
+  - `dash.btn.specui`：打开 Spec 工作台（等价 `codectl spec` 或 `/specui`）。
+  - `dash.btn.settings`：打开设置（写入 models.json / 提示 MCP），等价 `codectl settings`。
+- 操作面板
+  - 上下移动选择；Enter 执行；执行进度在底部通知区反馈。
+
+## 5. 数据来源与更新
+- 工具检测：并行查询 PATH 二进制与 npm registry 的最新版本；合并为 Installed/Version/Latest/Source。
+- 模型清单：读取 `~/.codectl/models.json`；展示已选择模型的有序列表。
+- MCP 清单：读取 `~/.codectl/mcp.json`；展示服务名列表。
+- 规范统计：扫描 `vibe-docs/spec/*.spec.mdx` frontmatter，按 status 聚合；最近已接受从缓存或扫描得到。
+- 刷新策略：
+  - 进入 Dash 时自动执行一次健康检查；手动可通过 `/doctor` 触发刷新。
+
+## 6. 可用性与无障碍
+- MUST 全键盘可达：Tab/方向键在按钮与操作面板间移动，Enter 触发动作。
+- SHOULD 状态栏提示关键操作（例如：“Enter 执行右侧操作 · ⌘P/Ctrl+P 命令面板”）。
+- 文本对比度、边框与选中高亮遵循全局配色（Vitesse）。
+
+## 7. 性能与稳定性
+- MUST 使用“固定内容行数”渲染卡片，保障三列等高与视觉稳定。
+- SHOULD 在终端宽度变化时只重排必要区域，避免无谓重渲染。
+
+## 8. 兼容与降级
+- 当终端不支持某些组合键时，命令面板仍可通过在输入框中键入斜杠命令触发（`/upgrade`、`/specui`、`/settings` 等）。
+- 无模型或 MCP 数据时以按钮提示替代空白（不报错，不闪烁）。
+
+## 9. Conformance（片段）
+1) 在空白配置下进入 Dash：
+   - CLI 表中安装列显示 …/×，“Upgrade All” 按钮可见。
+   - 模型区显示“暂无已选择的模型”与“打开设置”按钮。
+   - MCP 区显示“暂无 MCP 服务”与“打开设置”按钮。
+2) 在有若干 Accepted 规范的仓库中：
+   - 左列展示总数与各状态计数；最近表格至少 1 行。
+3) 点击“打开 SpecUI”后：进入 Spec 工作台；返回后 Dash 仍等高稳定。
+
+## 10. 变更记录
+- 0.1.0：初稿（草案）。
+
