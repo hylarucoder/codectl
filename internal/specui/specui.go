@@ -701,16 +701,19 @@ func (m *model) recalcViewports() {
 		topH = 3
 	}
 
-    // top split: left (file list) 32 cols, right (markdown) rest
+    // top split: left (file list) ~40% cols, right (markdown) rest
     innerW := m.width - 2 // borders padding approx
-	if innerW < 20 {
-		innerW = m.width
-	}
-	lw := 32
-	if lw > innerW-10 {
-		lw = innerW / 3
-	}
-	rw := innerW - lw
+    if innerW < 20 {
+        innerW = m.width
+    }
+    lw := innerW * 2 / 5 // 40%
+    if lw < 32 {
+        lw = 32
+    }
+    if lw > innerW-20 { // keep room for right pane
+        lw = innerW - 20
+    }
+    rw := innerW - lw
 	if lw < 20 {
 		lw = 20
 	}
@@ -1171,11 +1174,9 @@ func nerdIcon(name string, isDir bool, expanded bool) string {
     } else if strings.HasSuffix(lower, ".lock") || strings.Contains(lower, "lock") {
         icon = lock
     }
-    // Subtle theming: folders use blue, files use secondary
-    if isDir {
-        return lipgloss.NewStyle().Foreground(uistyle.Vitesse.Blue).Render(icon)
-    }
-    return lipgloss.NewStyle().Foreground(uistyle.Vitesse.Secondary).Render(icon)
+    // Return raw glyph without ANSI color to avoid width miscalculation
+    // inside bubbles table (which truncates before styling).
+    return icon
 }
 
 // while preserving inner spacing and ANSI sequences.
