@@ -55,11 +55,11 @@ type model struct {
 	// env
 	cwd    string
 	root   string
-    width  int
-    height int
-    // cached pane widths for stable layout
-    leftW  int
-    rightW int
+	width  int
+	height int
+	// cached pane widths for stable layout
+	leftW  int
+	rightW int
 
 	// flow
 	page page
@@ -121,8 +121,8 @@ type treeNode struct {
 }
 
 type treeRow struct {
-    Node *treeNode
-    Text string
+	Node *treeNode
+	Text string
 }
 
 type focusArea int
@@ -146,18 +146,18 @@ func initialModel() model {
 		table.WithHeight(20),
 	)
 	ts := table.DefaultStyles()
-    ts.Header = ts.Header.
-        BorderStyle(lipgloss.NormalBorder()).
-        BorderForeground(uistyle.Vitesse.Border).
-        BorderBottom(true).
-        Bold(false).
-        Padding(0, 0).
-        Foreground(uistyle.Vitesse.Secondary).
-        Background(uistyle.Vitesse.Bg)
-    ts.Cell = ts.Cell.
-        Padding(0, 0).
-        Foreground(uistyle.Vitesse.Text).
-        Background(uistyle.Vitesse.Bg)
+	ts.Header = ts.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(uistyle.Vitesse.Border).
+		BorderBottom(true).
+		Bold(false).
+		Padding(0, 0).
+		Foreground(uistyle.Vitesse.Secondary).
+		Background(uistyle.Vitesse.Bg)
+	ts.Cell = ts.Cell.
+		Padding(0, 0).
+		Foreground(uistyle.Vitesse.Text).
+		Background(uistyle.Vitesse.Bg)
 
 	ts.Selected = ts.Selected.
 		Foreground(uistyle.Vitesse.OnAccent).
@@ -578,12 +578,12 @@ func (m model) View() string {
 		return ""
 	case pageDetail:
 		// choose styles; highlight border of focused pane
-        leftBox := boxStyle
-        rightBox := boxStyle
-        inputBox := boxStyle
-        // Remove inner horizontal padding on both panes so width is stable regardless of focus
-        leftBox = leftBox.Padding(0, 0)
-        rightBox = rightBox.Padding(0, 0)
+		leftBox := boxStyle
+		rightBox := boxStyle
+		inputBox := boxStyle
+		// Remove inner horizontal padding on left/right panes so width is stable regardless of focus
+		leftBox = leftBox.Padding(0, 0)
+		rightBox = rightBox.Padding(0, 0)
 		switch m.focus {
 		case focusFiles:
 			leftBox = boxStyleFocus
@@ -592,14 +592,21 @@ func (m model) View() string {
 		case focusInput:
 			inputBox = boxStyleFocus
 		}
-        // top: split left (file manager) and right (markdown)
-        lw := m.leftW
-        rw := m.rightW
-        // Fixed-width render to avoid jitter when selection changes
-        if lw < 3 { lw = 3 }
-        if rw < 3 { rw = 3 }
-        left := leftBox.Width(lw).Render(m.fileTable.View())
-        left = zone.Mark("spec.files", left)
+		// Ensure focused pane styles also keep zero inner padding (avoid width jitter)
+		leftBox = leftBox.Padding(0, 0)
+		rightBox = rightBox.Padding(0, 0)
+		// top: split left (file manager) and right (markdown)
+		lw := m.leftW
+		rw := m.rightW
+		// Fixed-width render to avoid jitter when selection changes
+		if lw < 3 {
+			lw = 3
+		}
+		if rw < 3 {
+			rw = 3
+		}
+		left := leftBox.Width(lw).Render(m.fileTable.View())
+		left = zone.Mark("spec.files", left)
 		// right: header with filename + markdown viewport
 		var fname string
 		if m.selected != nil {
@@ -608,9 +615,11 @@ func (m model) View() string {
 			fname = "(未选择文件)"
 		}
 		// divider under filename sized to preview width; clip long names
-        // divider width equals right pane inner content width (pane - borders)
-        sepWidth := rw - 2
-        if sepWidth <= 0 { sepWidth = 1 }
+		// divider width equals right pane inner content width (pane - borders)
+		sepWidth := rw - 2
+		if sepWidth <= 0 {
+			sepWidth = 1
+		}
 		clipW := sepWidth - 2
 		if clipW < 1 {
 			clipW = sepWidth
@@ -625,7 +634,7 @@ func (m model) View() string {
 			divider,
 			m.mdVP.View(),
 		)
-        right := rightBox.Width(rw).Render(rightInner)
+		right := rightBox.Width(rw).Render(rightInner)
 		right = zone.Mark("spec.preview", right)
 		top := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 		// bottom: input and a lipgloss-rendered work bar
@@ -704,38 +713,38 @@ func (m *model) recalcViewports() {
 		topH = 3
 	}
 
-    // top split: left (file list) fixed width, right (markdown) rest
-    innerW := m.width - 2 // borders padding approx
-    if innerW < 20 {
-        innerW = m.width
-    }
-    const fileTreeFixed = 36
-    lw := fileTreeFixed
-    // Ensure right pane keeps at least 20 cols; clamp when terminal is narrow
-    if lw > innerW-20 {
-        if innerW-20 > 20 {
-            lw = innerW - 20
-        } else {
-            lw = 20
-        }
-    }
-    if lw < 20 {
-        lw = 20
-    }
-    rw := innerW - lw
-    // cache for stable rendering widths (total pane widths including borders)
-    m.leftW = lw
-    m.rightW = rw
+	// top split: left (file list) fixed width, right (markdown) rest
+	innerW := m.width - 2 // borders padding approx
+	if innerW < 20 {
+		innerW = m.width
+	}
+	const fileTreeFixed = 36
+	lw := fileTreeFixed
+	// Ensure right pane keeps at least 20 cols; clamp when terminal is narrow
+	if lw > innerW-20 {
+		if innerW-20 > 20 {
+			lw = innerW - 20
+		} else {
+			lw = 20
+		}
+	}
+	if lw < 20 {
+		lw = 20
+	}
+	rw := innerW - lw
+	// cache for stable rendering widths (total pane widths including borders)
+	m.leftW = lw
+	m.rightW = rw
 	if lw < 20 {
 		lw = 20
 	}
 	if rw < 20 {
 		rw = 20
 	}
-    // Adjust for lipgloss border padding by setting slightly smaller dimensions
-    // left (file list) uses table height directly; right is markdown viewport
-    // right also reserves 2 lines for filename header and divider inside the box
-    mdW, mdH := rw-2, topH-2
+	// Adjust for lipgloss border padding by setting slightly smaller dimensions
+	// left (file list) uses table height directly; right is markdown viewport
+	// right also reserves 2 lines for filename header and divider inside the box
+	mdW, mdH := rw-2, topH-2
 	if mdH > 2 {
 		mdH -= 2
 	} else if mdH > 0 {
@@ -754,25 +763,25 @@ func (m *model) recalcViewports() {
 	if lgH < 3 {
 		lgH = topH
 	}
-    if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
-        m.mdVP = viewport.New(mdW, mdH)
-    } else {
-        m.mdVP.Width = mdW
-        m.mdVP.Height = mdH
-    }
-    // Sync file table column width and viewport width with left pane width so
-    // that selection highlight covers the whole line and truncation is reasonable.
-    colW := lw - 2 // account for left/right borders; left pane padding set to 0
-    if colW < 10 {
-        if lw-2 > 10 {
-            colW = lw - 2
-        } else {
-            colW = 10
-        }
-    }
-    // Only one column: Files
-    m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
-    m.fileTable.SetWidth(colW)
+	if m.mdVP.Width == 0 && m.mdVP.Height == 0 {
+		m.mdVP = viewport.New(mdW, mdH)
+	} else {
+		m.mdVP.Width = mdW
+		m.mdVP.Height = mdH
+	}
+	// Sync file table column width and viewport width with left pane width so
+	// that selection highlight covers the whole line and truncation is reasonable.
+	colW := lw - 2 // account for left/right borders; left pane padding set to 0
+	if colW < 10 {
+		if lw-2 > 10 {
+			colW = lw - 2
+		} else {
+			colW = 10
+		}
+	}
+	// Only one column: Files
+	m.fileTable.SetColumns([]table.Column{{Title: "Files", Width: colW}})
+	m.fileTable.SetWidth(colW)
 	// log viewport unused in this layout
 
 	// input width adjust
@@ -852,24 +861,24 @@ func vitesseGlamour() ansi.StyleConfig {
 	bg := hex(uistyle.Vitesse.Bg)
 	bgSoft := hex(uistyle.Vitesse.BgSoft)
 
-    return ansi.StyleConfig{
-        Document: ansi.StyleBlock{
-            StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bg)},
-        },
-        Paragraph: ansi.StyleBlock{
-            StylePrimitive: ansi.StylePrimitive{Color: sp(text)},
-        },
-        BlockQuote: ansi.StyleBlock{
-            StylePrimitive: ansi.StylePrimitive{Color: sp(secondary), Italic: bp(true)},
-        },
-        // Markdown headings use theme blue consistently
-        Heading: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H1:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H2:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H3:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H4:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H5:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
-        H6:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+	return ansi.StyleConfig{
+		Document: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(text), BackgroundColor: sp(bg)},
+		},
+		Paragraph: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(text)},
+		},
+		BlockQuote: ansi.StyleBlock{
+			StylePrimitive: ansi.StylePrimitive{Color: sp(secondary), Italic: bp(true)},
+		},
+		// Markdown headings use theme blue consistently
+		Heading: ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H1:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H2:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H3:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H4:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H5:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
+		H6:      ansi.StyleBlock{StylePrimitive: ansi.StylePrimitive{Color: sp(blue), Bold: bp(true)}},
 
 		Text:           ansi.StylePrimitive{Color: sp(text)},
 		Emph:           ansi.StylePrimitive{Italic: bp(true)},
@@ -1127,68 +1136,68 @@ func stripFrontmatter(s string) string {
 // isMarkdown reports whether the given path looks like a Markdown document
 // that we can render on the right pane.
 func isMarkdown(path string) bool {
-    p := strings.ToLower(path)
-    return strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".mdx") || strings.HasSuffix(p, ".markdown")
+	p := strings.ToLower(path)
+	return strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".mdx") || strings.HasSuffix(p, ".markdown")
 }
 
 // nerdIcon returns a Nerd Font icon for a given file or directory name.
 // It uses a conservative subset of common glyphs to avoid width issues.
 func nerdIcon(name string, isDir bool, expanded bool) string {
-    // Choose icon codepoints from Nerd Font (v3) commonly available
-    // Folders
-    folderClosed := "" // nf-custom-folder
-    folderOpen := ""   // nf-custom-folder_open
-    // Files
-    md := ""      // nf-custom-markdown
-    gof := ""      // nf-custom-go
-    json := ""    // nf-custom-json
-    yml := ""     // generic config/gear
-    sh := ""      // nf-dev-terminal
-    js := ""      // nf-custom-js
-    ts := ""      // nf-custom-ts
-    py := ""      // nf-custom-python
-    html := ""    // nf-custom-html5
-    css := ""     // nf-custom-css3
-    img := ""     // nf-custom-image
-    lock := ""     // nf-fa-lock
-    txt := ""      // nf-fa-file
+	// Choose icon codepoints from Nerd Font (v3) commonly available
+	// Folders
+	folderClosed := "" // nf-custom-folder
+	folderOpen := ""   // nf-custom-folder_open
+	// Files
+	md := ""   // nf-custom-markdown
+	gof := ""  // nf-custom-go
+	json := "" // nf-custom-json
+	yml := ""  // generic config/gear
+	sh := ""   // nf-dev-terminal
+	js := ""   // nf-custom-js
+	ts := ""   // nf-custom-ts
+	py := ""   // nf-custom-python
+	html := "" // nf-custom-html5
+	css := ""  // nf-custom-css3
+	img := ""  // nf-custom-image
+	lock := "" // nf-fa-lock
+	txt := ""  // nf-fa-file
 
-    icon := txt
-    lower := strings.ToLower(name)
-    if isDir {
-        if expanded {
-            icon = folderOpen
-        } else {
-            icon = folderClosed
-        }
-    } else if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".mdx") || strings.HasSuffix(lower, ".markdown") {
-        icon = md
-    } else if strings.HasSuffix(lower, ".go") {
-        icon = gof
-    } else if strings.HasSuffix(lower, ".json") {
-        icon = json
-    } else if strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".toml") {
-        icon = yml
-    } else if strings.HasSuffix(lower, ".sh") || strings.HasSuffix(lower, ".bash") || strings.HasSuffix(lower, ".zsh") {
-        icon = sh
-    } else if strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".cjs") || strings.HasSuffix(lower, ".mjs") {
-        icon = js
-    } else if strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".tsx") {
-        icon = ts
-    } else if strings.HasSuffix(lower, ".py") {
-        icon = py
-    } else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
-        icon = html
-    } else if strings.HasSuffix(lower, ".css") || strings.HasSuffix(lower, ".scss") || strings.HasSuffix(lower, ".less") {
-        icon = css
-    } else if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") || strings.HasSuffix(lower, ".svg") || strings.HasSuffix(lower, ".ico") {
-        icon = img
-    } else if strings.HasSuffix(lower, ".lock") || strings.Contains(lower, "lock") {
-        icon = lock
-    }
-    // Return raw glyph without ANSI color to avoid width miscalculation
-    // inside bubbles table (which truncates before styling).
-    return icon
+	icon := txt
+	lower := strings.ToLower(name)
+	if isDir {
+		if expanded {
+			icon = folderOpen
+		} else {
+			icon = folderClosed
+		}
+	} else if strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".mdx") || strings.HasSuffix(lower, ".markdown") {
+		icon = md
+	} else if strings.HasSuffix(lower, ".go") {
+		icon = gof
+	} else if strings.HasSuffix(lower, ".json") {
+		icon = json
+	} else if strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".toml") {
+		icon = yml
+	} else if strings.HasSuffix(lower, ".sh") || strings.HasSuffix(lower, ".bash") || strings.HasSuffix(lower, ".zsh") {
+		icon = sh
+	} else if strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".cjs") || strings.HasSuffix(lower, ".mjs") {
+		icon = js
+	} else if strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".tsx") {
+		icon = ts
+	} else if strings.HasSuffix(lower, ".py") {
+		icon = py
+	} else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
+		icon = html
+	} else if strings.HasSuffix(lower, ".css") || strings.HasSuffix(lower, ".scss") || strings.HasSuffix(lower, ".less") {
+		icon = css
+	} else if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") || strings.HasSuffix(lower, ".svg") || strings.HasSuffix(lower, ".ico") {
+		icon = img
+	} else if strings.HasSuffix(lower, ".lock") || strings.Contains(lower, "lock") {
+		icon = lock
+	}
+	// Return raw glyph without ANSI color to avoid width miscalculation
+	// inside bubbles table (which truncates before styling).
+	return icon
 }
 
 // while preserving inner spacing and ANSI sequences.
@@ -1260,17 +1269,17 @@ func (m *model) buildTree(dir string, parent *treeNode) *treeNode {
 }
 
 func (m *model) buildVisible() []treeRow {
-    out := make([]treeRow, 0, 64)
-    // root line
-    {
-        icon := nerdIcon(m.treeRoot.Name+"/", true, true)
-        out = append(out, treeRow{Node: m.treeRoot, Text: icon + " " + m.treeRoot.Name + "/"})
-    }
-    var walk func(parent *treeNode, prefixKinds []bool)
-    walk = func(parent *treeNode, prefixKinds []bool) {
-        if !m.expanded[parent.Path] {
-            return
-        }
+	out := make([]treeRow, 0, 64)
+	// root line
+	{
+		icon := nerdIcon(m.treeRoot.Name+"/", true, true)
+		out = append(out, treeRow{Node: m.treeRoot, Text: icon + " " + m.treeRoot.Name + "/"})
+	}
+	var walk func(parent *treeNode, prefixKinds []bool)
+	walk = func(parent *treeNode, prefixKinds []bool) {
+		if !m.expanded[parent.Path] {
+			return
+		}
 		for i, ch := range parent.Children {
 			last := i == len(parent.Children)-1
 			var b strings.Builder
@@ -1286,18 +1295,18 @@ func (m *model) buildVisible() []treeRow {
 			} else {
 				b.WriteString("├╴ ")
 			}
-            name := ch.Name
-            if ch.IsDir {
-                name += "/"
-            }
-            // Nerd Font icon based on filetype/dir status
-            icon := nerdIcon(name, ch.IsDir, m.expanded[ch.Path])
-            out = append(out, treeRow{Node: ch, Text: b.String() + icon + " " + name})
-            if ch.IsDir {
-                next := append(append([]bool(nil), prefixKinds...), !last)
-                walk(ch, next)
-            }
-        }
+			name := ch.Name
+			if ch.IsDir {
+				name += "/"
+			}
+			// Nerd Font icon based on filetype/dir status
+			icon := nerdIcon(name, ch.IsDir, m.expanded[ch.Path])
+			out = append(out, treeRow{Node: ch, Text: b.String() + icon + " " + name})
+			if ch.IsDir {
+				next := append(append([]bool(nil), prefixKinds...), !last)
+				walk(ch, next)
+			}
+		}
 	}
 	walk(m.treeRoot, nil)
 	return out
