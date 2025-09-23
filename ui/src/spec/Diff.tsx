@@ -1,56 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Card, Flex, List, Radio, Typography, theme } from 'antd'
 import { api } from '../lib/api'
-import type { DiffChangeItem, DiffFileResponse } from '../types'
+import type { DiffChangeItem, DiffFileResponse, SplitRow, SplitSide } from '../types'
 
 type Mode = 'all' | 'staged' | 'worktree'
 
-type SideType = 'ctx' | 'del' | 'add' | 'meta' | 'empty'
-interface SplitRow { left: string; right: string; lt: SideType; rt: SideType }
-
-function parseUnifiedForSplit(diff: string): SplitRow[] {
-  const rows: SplitRow[] = []
-  const lines = (diff || '').split(/\r?\n/)
-  let dels: string[] = []
-  let adds: string[] = []
-  const flush = () => {
-    const n = Math.max(dels.length, adds.length)
-    for (let i = 0; i < n; i++) {
-      const l = i < dels.length ? dels[i] : ''
-      const r = i < adds.length ? adds[i] : ''
-      rows.push({ left: l, right: r, lt: l ? 'del' : 'empty', rt: r ? 'add' : 'empty' })
-    }
-    dels = []
-    adds = []
-  }
-  for (const raw of lines) {
-    if (raw.startsWith('@@') || raw.startsWith('diff ') || raw.startsWith('index ') || raw.startsWith('--- ') || raw.startsWith('+++ ')) {
-      flush()
-      const meta = raw
-      rows.push({ left: meta, right: meta, lt: 'meta', rt: 'meta' })
-      continue
-    }
-    if (raw.startsWith(' ')) {
-      flush()
-      const s = raw.slice(1)
-      rows.push({ left: s, right: s, lt: 'ctx', rt: 'ctx' })
-      continue
-    }
-    if (raw.startsWith('-')) { dels.push(raw.slice(1)); continue }
-    if (raw.startsWith('+')) { adds.push(raw.slice(1)); continue }
-    // Other lines: treat as meta or context
-    flush()
-    if (raw.trim() === '') continue
-    rows.push({ left: raw, right: raw, lt: 'meta', rt: 'meta' })
-  }
-  flush()
-  return rows
-}
-
-function SplitDiff({ diff }: { diff: string }) {
+function SplitDiff({ rows }: { rows: SplitRow[] }) {
   const { token } = theme.useToken()
-  const rows = useMemo(() => parseUnifiedForSplit(diff), [diff])
-  const cellStyle = (t: SideType): React.CSSProperties => {
+  const cellStyle = (t: SplitSide): React.CSSProperties => {
     switch (t) {
       case 'del': return { background: token.colorErrorBg }
       case 'add': return { background: token.colorSuccessBg }
@@ -98,6 +55,7 @@ export default function DiffView() {
   const [diff, setDiff] = useState<string>('')
   const [specOnly, setSpecOnly] = useState<boolean>(false)
   const [view, setView] = useState<'unified' | 'split'>('split')
+  const [splitRows, setSplitRows] = useState<SplitRow[]>([])
 
   async function loadChanges(m: Mode, only: boolean) {
     const q = `/api/diff/changes?mode=${m}&specOnly=${only ? '1' : '0'}`
@@ -112,12 +70,18 @@ export default function DiffView() {
 
   async function openFile(it: DiffChangeItem) {
     setSelected(it)
-    const q = `/api/diff/file?path=${encodeURIComponent(it.path)}&mode=${mode}`
+    const q = `/api/diff/file?path=${encodeURIComponent(it.path)}&mode=${mode}${view==='split' ? '&format=split' : ''}`
     const d = await api<DiffFileResponse>(q)
     setDiff(d.diff || '')
+    setSplitRows(d.split || [])
   }
 
   useEffect(() => { loadChanges(mode, specOnly) }, [mode, specOnly])
+  useEffect(() => {
+    if (selected && view === 'split') {
+      openFile(selected)
+    }
+  }, [view])
 
   const grouped = useMemo(() => {
     const m: Record<string, DiffChangeItem[]> = {}
@@ -164,7 +128,9 @@ export default function DiffView() {
         ))}
       </Card>
       <Card size="small" style={{ flex: 1 }} title={selected ? selected.path : 'Diff'} bodyStyle={{ maxHeight: 640, overflow: 'auto' }}>
-        {diff ? (view === 'split' ? <SplitDiff diff={diff} /> : <DiffBody diff={diff} />) : <Typography.Text type="secondary">No diff</Typography.Text>}
+        {view === 'split'
+          ? (splitRows && splitRows.length ? <SplitDiff rows={splitRows} /> : <Typography.Text type="secondary">No diff</Typography.Text>)
+          : (diff ? <DiffBody diff={diff} /> : <Typography.Text type="secondary">No diff</Typography.Text>)}
       </Card>
     </Flex>
   )

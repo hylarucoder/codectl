@@ -10,6 +10,8 @@ import (
     "sort"
     "strings"
     "time"
+    "regexp"
+    "strconv"
 
     sys "codectl/internal/system"
 )
@@ -102,6 +104,7 @@ func diffFileHandler(w http.ResponseWriter, r *http.Request) {
     p := strings.TrimSpace(r.URL.Query().Get("path"))
     if p == "" { writeJSON(w, http.StatusBadRequest, errJSON(errors.New("missing path"))); return }
     mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
+    format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format"))) // "split" for side-by-side rows
     ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
     defer cancel()
     root, err := sys.GitRoot(ctx, ".")
@@ -128,7 +131,12 @@ func diffFileHandler(w http.ResponseWriter, r *http.Request) {
     if strings.TrimSpace(out) == "" {
         out = "(no diff) — file might be untracked or unchanged)"
     }
-    writeJSON(w, http.StatusOK, map[string]any{"path": filepath.ToSlash(p), "mode": modeOrAll(mode), "diff": out})
+    res := map[string]any{"path": filepath.ToSlash(p), "mode": modeOrAll(mode), "diff": out}
+    if format == "split" {
+        rows := unifiedToSplit(out)
+        res["split"] = rows
+    }
+    writeJSON(w, http.StatusOK, res)
 }
 
 func modeOrAll(m string) string { if m == "" { return "all" }; return m }
@@ -146,3 +154,84 @@ func runGitOutput(ctx context.Context, root string, args ...string) (string, err
     return buf.String(), nil
 }
 
+// unifiedToSplit converts a unified diff string into side-by-side rows.
+// Each row contains left/right text and a type: ctx|del|add|meta|empty, plus optional line numbers.
+type splitRow struct {
+    Left string `json:"left"`
+    Right string `json:"right"`
+    LT   string `json:"lt"`
+    RT   string `json:"rt"`
+    LN   int    `json:"ln,omitempty"`
+    RN   int    `json:"rn,omitempty"`
+}
+
+var hunkRe = regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
+
+func unifiedToSplit(diff string) []splitRow {
+    rows := make([]splitRow, 0, 256)
+    lines := strings.Split(strings.ReplaceAll(diff, "\r\n", "\n"), "\n")
+    // pending blocks of deletions/additions (within a hunk)
+    type lineNumText struct{ n int; s string }
+    var dels, adds []lineNumText
+    flush := func() {
+        n := len(dels)
+        if len(adds) > n { n = len(adds) }
+        for i := 0; i < n; i++ {
+            var l, r lineNumText
+            if i < len(dels) { l = dels[i] } else { l = lineNumText{} }
+            if i < len(adds) { r = adds[i] } else { r = lineNumText{} }
+            row := splitRow{Left: l.s, Right: r.s}
+            if l.s != "" { row.LT = "del"; row.LN = l.n } else { row.LT = "empty" }
+            if r.s != "" { row.RT = "add"; row.RN = r.n } else { row.RT = "empty" }
+            rows = append(rows, row)
+        }
+        dels = nil
+        adds = nil
+    }
+    // current hunk line numbers
+    var lno, rno int
+    for _, raw := range lines {
+        if strings.HasPrefix(raw, "diff ") || strings.HasPrefix(raw, "index ") || strings.HasPrefix(raw, "--- ") || strings.HasPrefix(raw, "+++ ") {
+            flush()
+            if strings.TrimSpace(raw) == "" { continue }
+            rows = append(rows, splitRow{Left: raw, Right: raw, LT: "meta", RT: "meta"})
+            continue
+        }
+        if m := hunkRe.FindStringSubmatch(raw); m != nil {
+            flush()
+            // parse captures: -l,c +r,c
+            lno = atoiSafe(m[1])
+            rno = atoiSafe(m[3])
+            rows = append(rows, splitRow{Left: raw, Right: raw, LT: "meta", RT: "meta"})
+            continue
+        }
+        if raw == "" { // skip trailing empty
+            continue
+        }
+        switch raw[0] {
+        case ' ':
+            flush()
+            s := raw[1:]
+            rows = append(rows, splitRow{Left: s, Right: s, LT: "ctx", RT: "ctx", LN: lno, RN: rno})
+            lno++
+            rno++
+        case '-':
+            dels = append(dels, lineNumText{n: lno, s: raw[1:]})
+            lno++
+        case '+':
+            adds = append(adds, lineNumText{n: rno, s: raw[1:]})
+            rno++
+        default:
+            flush()
+            rows = append(rows, splitRow{Left: raw, Right: raw, LT: "meta", RT: "meta"})
+        }
+    }
+    flush()
+    return rows
+}
+
+func atoiSafe(s string) int {
+    if s == "" { return 0 }
+    n, _ := strconv.Atoi(s)
+    return n
+}

@@ -54,6 +54,7 @@ export interface DiffFileResponse {
   path: string
   mode: 'all' | 'staged' | 'worktree' | string
   diff: string
+  split?: SplitRow[]
 }
 
 export interface TaskItem {
@@ -65,3 +66,6 @@ export interface TaskItem {
   due?: string
   fields?: Record<string, string>
 }
+
+export type SplitSide = 'ctx' | 'del' | 'add' | 'meta' | 'empty'
+export interface SplitRow { left: string; right: string; lt: SplitSide; rt: SplitSide; ln?: number; rn?: number }
