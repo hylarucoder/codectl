@@ -1,0 +1,176 @@
+---
+title: TUI → WebUI 重构与默认命令改造（Proposal）
+status: draft
+owners:
+  - @lucasay
+created: 2025-09-24
+updated: 2025-09-24
+depends:
+  - 000-overall.spec.mdx
+  - webui.spec.mdx
+  - webui-backend.spec.mdx
+  - webui-specui-parity.spec.mdx
+  - 201-tui-spec-ui.spec.mdx
+  - 202-tui-specui-tabs-diff.spec.mdx
+---
+
+# TUI → WebUI 重构与默认命令改造（Proposal）
+
+本提案定义一次“彻底改造”：将 codectl 的主要交互从 TUI/CLI 迁移到 WebUI。默认命令 `codectl` 即启动本地服务（Web 后端 + 内嵌前端），所有原 CLI/TUI 功能整合进 WebUI。
+
+目标：
+
+- 默认体验统一：`codectl` = 启动服务并打开 WebUI。
+- 功能收拢：Provider/MCP/Models/SpecUI/Settings/Check 等均在 WebUI 中完成。
+- 架构简化：CLI 仅承担“启动 + 诊断”职责；交互与状态通过 HTTP API + SPA 承载。
+- 渐进迁移：保留兼容入口与明确的废弃时间表，降低现有用户成本。
+
+非目标：
+
+- 在本提案阶段扩展远程多用户能力（局限本机 loopback）。
+- 将 WebUI 构建为复杂门户；以“SpecUI Parity + Provider/MCP/Settings”作为第一阶段边界。
+
+## 1. 用户体验变更（Breaking Changes）
+
+- 运行方式变更：
+  - 之前：`codectl` 打开 TUI（或依赖子命令）。
+  - 之后：`codectl` 启动本地 HTTP 服务（默认 `127.0.0.1:8787`），并（可选）自动打开浏览器。
+- CLI 子命令策略：
+  - 收敛为最小集：`serve`（别名：默认）、`status`、`version`、`doctor`（可选）。
+  - 其余子命令（如 `provider`、`mcp`、`model`、`spec` 等）标注 Deprecated，并在一次小版本后移除；功能在 WebUI 中提供等价/增强操作。
+- TUI 状态：
+  - TUI 不再作为默认 UI。若保留 `codectl tui`，仅作为过渡入口，标注 Deprecated；所有新增能力以 WebUI 为准。
+
+## 2. 顶层行为与 CLI 形态
+
+默认行为：
+
+- `codectl` 等价 `codectl serve --addr 127.0.0.1:8787 --open=false`。
+- 常用标志：
+  - `--addr`（string，默认 `127.0.0.1:8787`）
+  - `--open`（bool，默认 `false`；为 `true` 时自动打开浏览器）
+  - `--data-dir`（string，可覆盖默认 `~/.codectl/` 下的数据位置）
+  - `--log-level`（string，`info|debug|warn|error`）
+
+辅助命令：
+
+- `codectl status`：探测本地服务（同端口）是否可用；若未运行，给出启动提示。
+- `codectl version`：打印版本与构建信息。
+- `codectl doctor`（可选）：对常见环境项做快速体检（端口占用、权限、配置文件可写等）。
+
+弃用与指导：
+
+- 执行已弃用子命令时，CLI 输出迁移提示并引导用户在 WebUI 中完成对应操作（同时提供直达 URL）。
+
+## 3. WebUI 信息架构（承接 Parity 规范）
+
+- Dashboard：版本、健康状态、最近活动（会话/任务），快速入口（Spec 工作台、Providers、MCP、Settings）。
+- Spec 工作台（核心）：文件树 + 编辑/预览 + 会话流 + Diff（与 TUI SpecUI 等价/超集）。
+- Providers：读取/编辑 `~/.codectl/provider.json`（v2），支持验证与保存（后端规范化写回）。
+- MCP：查看/编辑 MCP 客户端配置与清单（本地），支持启用/禁用。
+- Models：列出可用模型、测试补全与调用连通性（只读/诊断为主）。
+- Settings：环境变量与本地偏好（API Keys、代理、工作区等）。
+- Logs/Events：后端事件流（SSE）与历史摘要。
+
+注：上述页面与能力由以下规范约束与复用：
+
+- 《webui-specui-parity.spec.mdx》：定义 Web 端实现对齐 TUI SpecUI 的功能与交互。
+- 《webui-backend.spec.mdx》：定义后端 API、SSE、鉴权与嵌入策略。
+- 《webui.spec.mdx》：MVP 与嵌入式构建/路由基础。
+
+## 4. 后端能力与接口（增量）
+
+在已有 `webui.spec.mdx` 与 `webui-backend.spec.mdx` 基础上，补充/统一原 CLI 能力：
+
+- Spec 文档：
+  - `GET  /api/spec/docs` → 枚举 `vibe-docs/spec/**.spec.mdx` 元数据。
+  - `GET  /api/spec/doc?path=<file>` → `{frontmatter, content}`。
+  - `PUT  /api/spec/doc` → `{path, frontmatter?, content?}` 保存并返回校验结果。
+  - `POST /api/spec/validate` → 单文件校验（与 `codectl check` 等价）。
+- Providers（v2）：
+  - `GET/PUT /api/providers`（已定义），保证与 `internal/provider` 读写一致性与规范化。
+- MCP：
+  - `GET/PUT /api/mcp/config` → 读取/保存本地 MCP 客户端配置。
+  - `GET  /api/mcp/catalog` → 列出已发现/注册的 MCP 服务与能力摘要。
+- Models：
+  - `GET  /api/models` → 从 provider 配置推导/探测可用模型；必要时懒加载/缓存。
+- Settings：
+  - `GET/PUT /api/settings` → 本地偏好（仅本机）。敏感字段仅驻内存，不落盘或按需遮罩。
+- Sessions/Logs：
+  - `GET  /api/sessions/:id/events`（SSE）→ 事件流；
+  - `POST /api/sessions/:id/commands` → 斜杠命令触发（/spec | /task | /check）。
+
+安全边界：
+
+- 默认仅监听 loopback；非 loopback 启动打印强警告。
+- 所有文件写操作限定在允许的工作区与用户目录（拒绝路径穿越）。
+- 无登录态；UI 即本机工具的可视外壳。
+
+## 5. 代码结构与重构要点
+
+- CLI：
+  - `internal/cli/serve.go`（新/收敛）：默认入口；`main.go` 默认调用 Serve。
+  - 其它命令文件标注 Deprecated，保留薄壳仅打印迁移提示（首个过渡版本）。
+- WebUI 后端：
+  - `internal/webui/server`：路由 + 处理器 + SSE；
+  - `internal/webui/embed`：`go:embed` 静态资源。
+- TUI 与 App：
+  - `internal/ui/` 与 `internal/app/` 冻结为兼容层，不新增特性；后续版本移除。
+
+## 6. 迁移计划（Phased Rollout）
+
+Phase 0（准备）
+
+- 增加 `serve` 子命令与 WebUI MVP（若未存在则落地），通过 `codectl webui` 验证端到端。
+- 在 TUI 显示提示条：推荐使用 WebUI；提供一次性跳转脚本。
+
+Phase 1（默认切换）
+
+- 修改默认命令为 `serve`；`codectl` 直接启动服务（不自动开浏览器，用户可 `--open`）。
+- CLI 中 `provider/mcp/model/spec` 等命令打印“已迁移到 WebUI”的提示与直达 URL。
+- 文档与 README 更新默认用法。
+
+Phase 2（功能对齐）
+
+- 按《webui-specui-parity.spec.mdx》完成 SpecUI 等价特性。
+- 完成 Providers/MCP/Settings/Models 的读取与保存、校验与连通性诊断。
+
+Phase 3（清理与移除）
+
+- 移除 Deprecated CLI 命令与 TUI 相关入口；保留 `tui` 作为隐藏命令（可选）。
+- 收敛内部依赖，删除未使用的 TUI 代码与资源（遵循语义化版本发布）。
+
+## 7. 验收标准（Acceptance Criteria）
+
+- 运行 `codectl`：
+  - 在 `127.0.0.1:8787` 启动服务；`Ctrl+C` 优雅退出。
+  - 访问 `/` 加载嵌入式 SPA；Dashboard 显示版本与健康状态。
+- WebUI 完成：
+  - Spec 工作台具备：文件树、编辑/预览、会话流、Diff；/spec、/task、/check 指令工作。
+  - Providers：GET/PUT 与本地 JSON 一致；保存后被规范化；错误有清晰提示。
+  - MCP：配置可读写，清单可浏览；错误隔离。
+  - Settings：本机偏好可读写；敏感字段不明文存盘。
+- CLI：
+  - `codectl status` 能探测并给出可操作建议；
+  - 调用 `codectl provider ...` 等获得迁移提示并退出码为非零（或 0 + 文案明确）。
+- 测试：
+  - 后端接口单测覆盖健康/版本、Providers GET/PUT、Spec 解析与校验（最小集），使用 `t.TempDir()` + `internal/testutil.WithEnv` 隔离 HOME。
+
+## 8. 风险与缓解
+
+- 用户对 TUI 依赖强：保留短暂过渡期与隐藏命令；提供 WebUI 功能对齐保障。
+- 本地端口冲突：支持 `--addr`，并在冲突时输出清晰排错提示。
+- 配置写入风险：PUT 时进行 schema 校验与规范化；失败回滚并提示具体字段。
+- 复杂度转移到前端：MVP 先小步；核心逻辑留在后端，前端只作视图与轻校验。
+
+## 9. 发布与文档
+
+- README 与 README.zh-cn 更新：默认使用方式、`--addr/--open`、WebUI 功能导航。
+- 在 `vibe-docs/spec/` 对齐/引用现有规范，保持单一事实来源（SoT）。
+
+## 10. 后续增强（Outlook）
+
+- 远程访问与认证（仅 opt-in；默认关闭）。
+- 多工作区管理、项目级会话与历史。
+- 可插拔工具链与任务编排（Task runner）在 WebUI 中可视化。
+

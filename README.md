@@ -8,15 +8,15 @@
 
 English documentation. 中文版请见：README.zh-cn.md
 
-A minimal TUI for Spec‑Driven Development that maximizes the effective use of Codex and other coding agents.
+Local Web UI for Spec‑Driven Development that maximizes the effective use of Codex and other coding agents.
 
 ## Features
 
 - Spec‑Driven Development workflow (Spec → Task → Coding)
-- Minimal TUI for essential agent monitoring
+- Local Web UI for everyday workflows
 - Manage CLI coding agents (Codex / Claude Code / Gemini CLI)
 - Manage MCP and third‑party models
-- TUI + CLI: interactive usage and scriptable integration
+- CLI helpers: interactive usage and scriptable integration
 
 ## Why Spec‑Driven Development
 
@@ -26,21 +26,23 @@ A minimal TUI for Spec‑Driven Development that maximizes the effective use of 
 
 ## Quick Start
 
-1) Build and run codectl:
+1) Build and run codectl (starts local Web UI by default):
 
 ```bash
 # Run locally for development
-go run .
+go run . -o   # start server and open browser
 
 # Or build a binary
 go build -o codectl
-./codectl
+./codectl -o  # start server and open browser
 ```
 
 ## Usage
 
 ```bash
-codectl cli                     # Open CLI manager TUI (operations via slash commands)
+codectl                         # Start embedded Web UI server (default)
+codectl -a 127.0.0.1:8787 -o    # Bind address and open browser
+codectl webui -o               # Same as above, explicit subcommand
 # TODO: optimize this
 # shortcut for: codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
 codectl codex                   # codex + GPT‑5 (high effort)
@@ -86,8 +88,7 @@ go run .
 go build -o codectl
 ```
 
-This project uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI. Contributions welcome: please
-consider updating specs in `vibe-docs/spec/` first, then submit implementation + docs.
+Contributions welcome: please consider updating specs in `vibe-docs/spec/` first, then submit implementation + docs.
 
 ## Disclaimer
 

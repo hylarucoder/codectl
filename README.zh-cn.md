@@ -8,12 +8,12 @@
 
 中文文档。English version: README.md
 
-Spec‑Driven Development 的极简 TUI 工具, 最大化 codex 的有效利用率
+本地 WebUI 的 SDD 工具，最大化 codex 等编码代理的有效利用率。
 
 ## Feature
 
 - Spec Driven Development Workflow (Spec -> Task -> Coding)
-- Minimal TUI for necessary agent monitor
+- 本地 WebUI（推荐）
 - Manage CLI Coding Agent (Codex  / Claude Code / Gemini CLI)
 - Manage MCP / 3rd Party Model
 - TUI + CLI：既可交互式使用，也可脚本化集成。
@@ -26,21 +26,23 @@ Spec‑Driven Development 的极简 TUI 工具, 最大化 codex 的有效利用�
 
 ## 快速开始
 
-1) 构建并运行 codectl：
+1) 构建并运行 codectl（默认启动本地 WebUI）：
 
 ```bash
 # 本地开发运行
-go run .
+go run . -o   # 启动服务并打开浏览器
 
 # 或编译二进制
 go build -o codectl
-./codectl
+./codectl -o  # 启动服务并打开浏览器
 ```
 
 ## 用法
 
 ```bash
-codectl cli                     # 打开 CLI 管理 TUI（通过斜杠命令操作）
+codectl                         # 启动内嵌 WebUI（默认）
+codectl -a 127.0.0.1:8787 -o    # 自定义地址并自动打开浏览器
+ codectl webui -o               # 同上（显式子命令）
 # TODO: optimize this
 # short cut for codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
 codectl codex                   # codex + gpt 5 high
@@ -83,8 +85,7 @@ go run .
 go build -o codectl
 ```
 
-项目采用 [Bubble Tea](https://github.com/charmbracelet/bubbletea) 构建 TUI。欢迎提交 Issue/PR：建议先在 `vibe-docs/spec/`
-中补充或调整规范，再提交实现与文档。
+欢迎提交 Issue/PR：建议先在 `vibe-docs/spec/` 中补充或调整规范，再提交实现与文档。
 
 ## 免责声明
 

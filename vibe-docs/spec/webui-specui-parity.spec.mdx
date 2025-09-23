@@ -1,0 +1,134 @@
+---
+title: Web UI — TUI 功能对齐（Spec UI Parity）
+status: draft
+owners:
+  - @lucasay
+created: 2025-09-24
+updated: 2025-09-24
+depends:
+  - 000-overall.spec.mdx
+  - 100-cli-coding-agent.spec.mdx
+  - 201-tui-spec-ui.spec.mdx
+  - 202-tui-specui-tabs-diff.spec.mdx
+  - 410-specui-sessions.spec.mdx
+  - webui.spec.mdx
+  - webui-backend.spec.mdx
+---
+
+# Web UI — TUI 功能对齐（Spec UI Parity）
+
+目标：在 Web UI 中完整复刻并增强 TUI 的核心工作流（Spec 工作台、会话与日志、文件树与 Diff、斜杠命令、检查与提供商管理），实现“网页端 ＝ TUI 的超集”。
+
+非目标：放弃 TUI。短期内 TUI 与 Web UI 并行，逐步共享同一后端能力与数据面。
+
+## 摘要
+
+- 页面：Dashboard、Spec 工作台（文件树/编辑/预览/日志/输入）、Diff 视图、会话管理、Provider & MCP、Settings。
+- 后端：基于 `webui-backend.spec.mdx` 的 Gin + GORM（默认 sqlite）与静态嵌入；新增 FS/Spec/Session/LLM/Check 等 API。
+- 实时：采用 SSE（首选）或 WebSocket 流式传输 Token、任务进度、事件。
+- 安全：限定读写根与路径清洗；所有写操作需同源、带 CSRF/Origin 防护；默认仅回环地址监听。
+
+## 页面与交互（对齐 TUI）
+
+1) Dashboard
+- 工具/环境检查、版本、当前 Provider、近期活动摘要。
+
+2) Spec 工作台（核心）
+- 左侧：文件树（聚焦 `vibe-docs/spec/**`），支持新建/重命名/删除。
+- 中间：MDX 编辑（Monaco/CodeMirror）+ 预览切换。
+- 右侧：会话与事件流（与 TUI 日志等价），支持斜杠命令（/spec、/task、/check）。
+- 顶部 Tab：Editor | Preview | Diff。Diff 展示“未保存改动”与“与磁盘对比”。
+
+3) 会话
+- 多会话并行，列表/切换/归档；每会话维护对话历史与生成的片段（草案/任务等）。
+
+4) Provider & MCP
+- 与现有 `webui.spec.mdx` 相同的 Provider 编辑与保存；扩展 MCP 清单浏览与本地配置。
+
+5) Settings
+- 模型默认、API Key、网络代理、限流、日志等级等。
+
+## 后端 API（在 webui-backend 基础上扩展）
+
+基础（已存在）：
+- `GET  /api/health` → `{status}`
+- `GET  /api/version` → `{version}`
+- `GET  /api/providers`、`PUT /api/providers`
+
+新增（FS：文件系统，限定根目录）
+- `GET  /api/fs/tree?root=<dir>&depth=<n>` → 返回目录树（仅允许工作区与 `vibe-docs/`）。
+- `GET  /api/fs/read?path=<file>` → 返回文件内容（UTF-8 文本）。
+- `PUT  /api/fs/write` body: `{path, content, create?:bool}` → 覆写/创建文件。
+- `POST /api/fs/rename` body: `{path, newPath}` → 重命名/移动。
+- `POST /api/fs/delete` body: `{path}` → 删除文件。
+- `POST /api/fs/patch` body: `{unified:string}` → 应用统一 diff（保护根与清洗路径）。
+
+新增（Spec：MDX 解析与校验）
+- `GET  /api/spec/docs` → 列出 `vibe-docs/spec/**.spec.mdx` 基本元数据（frontmatter）
+- `GET  /api/spec/doc?path=<file>` → 返回 `{frontmatter, content}`
+- `PUT  /api/spec/doc` body: `{path, frontmatter?, content?}` → 保存并返回校验结果
+- `POST /api/spec/validate` body: `{path?, content?}` → 返回 `{errors,warnings,fields}`（等价 `codectl check` 的单文件版）
+
+新增（Sessions：会话与消息/事件）
+- `GET  /api/sessions` → 列表
+- `POST /api/sessions` body: `{title?}` → 创建会话
+- `GET  /api/sessions/:id` → 详情（消息、关联文件、状态）
+- `POST /api/sessions/:id/messages` body: `{role:"user|assistant|system", content}` → 追加消息
+- `POST /api/sessions/:id/commands` body: `{name:"/spec|/task|/check", args}` → 触发指令执行
+- `GET  /api/sessions/:id/stream` → SSE：消息/Token/事件流（`event: token|status|patch|log`）
+
+新增（LLM 与工具执行）
+- `POST /api/llm/chat` body: `{provider,model,messages,[stream]}` → 返回流或一次性响应
+- `POST /api/check/run` → 执行 `codectl check` 的后端等价，返回 JSON 报告
+
+注：所有写接口均需登录（沿用 `webui-backend` 的 Auth/JWT 中间件），并限制在工作区根内操作。路径必须 `Clean` 且拒绝 `..`、符号链接逃逸。
+
+## 流式与事件（SSE 推荐）
+
+- SSE 事件类型：`token`（LLM token）、`status`（阶段/进度）、`patch`（文件补丁）、`log`（工具日志）。
+- 统一事件 envelope：`{type, ts, sessionId, data}`；前端按 `type` 路由更新。
+- 断线重连：前端记住 `Last-Event-ID`（简化可不实现，后续增强）。
+
+## 数据与存储
+
+- DB：默认 `sqlite`（文件：`~/.codectl/codectl.db`），模型包括 `User`、`ActivityLog`、`FileObject`、`Session`、`Message`（会话相关新增，后期可做精简）。
+- 文件：Spec 文档继续存于工作区；Patch 操作走受控接口并返回规范化结果。
+
+## 安全
+
+- 仅回环监听；跨域默认关闭（同源访问）。
+- 路径清洗与根目录白名单；写操作需登录与 CSRF/Origin 校验（同源即可）。
+- 会话/命令执行设并发与超时；限流保护 `/api/llm/*` 与 `/api/fs/*`。
+
+## 测试
+
+- FS：Tree/Read/Write/Rename/Delete/Patch 的 happy/edge/恶意路径用例（使用 `t.TempDir()`）。
+- Spec：frontmatter 解析、校验错误展示、与 `codectl check` 一致性。
+- Sessions：消息追加、命令执行、SSE 流事件顺序与基本健壮性。
+- LLM：在无真实网络下使用 mock provider；或在 `make docker-test` 中跳过外网依赖。
+
+## 前端实现要点
+
+- 编辑器：Monaco/CodeMirror；MDX 预览与滚动同步。
+- 右侧事件流：虚拟列表提升性能；区分 `token/patch/log` 渲染。
+- 斜杠命令：输入框内触发菜单（/spec、/task、/check），发送到 `/api/sessions/:id/commands`，以 SSE 回传结果。
+- Diff：与 `202-tui-specui-tabs-diff.spec.mdx` 一致，支持工作副本 vs 磁盘、历史 vs 当前。
+
+## 推进与里程碑
+
+M1（后端补齐）
+- FS/Spec/Session/LLM/Check 端点最小实现；SSE 管道；sqlite 模型与迁移。
+
+M2（前端工作台）
+- 文件树/编辑/预览/会话流；斜杠命令；基本 Diff。
+
+M3（对齐与打磨）
+- Provider/MCP 页面并入；Dashboard/Settings；键盘操作与可访问性；错误态与重试。
+
+## 验收标准
+
+- Web UI 的 Spec 工作台具备：文件树、编辑/预览、会话流（含斜杠命令）、Diff 三大区域，并可在同一会话内完成“生成规范 → 保存 → 校验”的闭环。
+- SSE 正常推送 token/日志/补丁事件；断开后自动重连并恢复会话上下文。
+- FS 与 Spec API 覆盖基本单测；写操作均受限在工作区根内，非法路径被拒绝。
+- 与 TUI 的核心行为一致：/spec、/task、/check 的输入/输出与副作用一致（以规范为准）。
+
