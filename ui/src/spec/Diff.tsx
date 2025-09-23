@@ -3,8 +3,6 @@ import { Card, Flex, List, Radio, Typography, theme } from 'antd'
 import { api } from '../lib/api'
 import type { DiffChangeItem, DiffFileResponse, SplitRow, SplitSide } from '../types'
 
-type Mode = 'all' | 'staged' | 'worktree'
-
 function SplitDiff({ rows }: { rows: SplitRow[] }) {
   const { token } = theme.useToken()
   const cellStyle = (t: SplitSide): React.CSSProperties => {
@@ -22,7 +20,13 @@ function SplitDiff({ rows }: { rows: SplitRow[] }) {
     rowGap: 2,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
   }
-  const cellBase: React.CSSProperties = { whiteSpace: 'pre', padding: '0 8px' }
+  const cellBase: React.CSSProperties = {
+    whiteSpace: 'pre-wrap',
+    padding: '0 8px',
+    wordBreak: 'break-word',
+    overflowWrap: 'anywhere',
+    maxWidth: '100%'
+  }
   const lnStyle: React.CSSProperties = {
     textAlign: 'right',
     color: token.colorTextTertiary,
@@ -30,7 +34,7 @@ function SplitDiff({ rows }: { rows: SplitRow[] }) {
     padding: '0 4px'
   }
   return (
-    <div style={{ overflow: 'auto' }}>
+    <div style={{ overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%' }}>
       <div style={wrap}>
         {rows.map((r, i) => {
           const ln = r.ln ?? ''
@@ -53,7 +57,7 @@ function DiffBody({ diff }: { diff: string }) {
   const { token } = theme.useToken()
   const lines = (diff || '').split(/\r?\n/)
   return (
-    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
+    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', maxWidth: '100%', overflowX: 'auto', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
       {lines.map((ln, i) => {
         let color = token.colorText
         if (ln.startsWith('+') && !ln.startsWith('+++')) color = token.colorSuccess
@@ -67,7 +71,6 @@ function DiffBody({ diff }: { diff: string }) {
 
 export default function DiffView() {
   const { token } = theme.useToken()
-  const [mode, setMode] = useState<Mode>('all')
   const [items, setItems] = useState<DiffChangeItem[]>([])
   const [selected, setSelected] = useState<DiffChangeItem | null>(null)
   const [diff, setDiff] = useState<string>('')
@@ -75,8 +78,8 @@ export default function DiffView() {
   const [view, setView] = useState<'unified' | 'split'>('split')
   const [splitRows, setSplitRows] = useState<SplitRow[]>([])
 
-  async function loadChanges(m: Mode, only: boolean) {
-    const q = `/api/diff/changes?mode=${m}&specOnly=${only ? '1' : '0'}`
+  async function loadChanges(only: boolean) {
+    const q = `/api/diff/changes?mode=all&specOnly=${only ? '1' : '0'}`
     const arr = await api<DiffChangeItem[]>(q)
     setItems(arr)
     if (arr.length) {
@@ -88,13 +91,13 @@ export default function DiffView() {
 
   async function openFile(it: DiffChangeItem) {
     setSelected(it)
-    const q = `/api/diff/file?path=${encodeURIComponent(it.path)}&mode=${mode}${view==='split' ? '&format=split' : ''}`
+    const q = `/api/diff/file?path=${encodeURIComponent(it.path)}&mode=all${view==='split' ? '&format=split' : ''}`
     const d = await api<DiffFileResponse>(q)
     setDiff(d.diff || '')
     setSplitRows(d.split || [])
   }
 
-  useEffect(() => { loadChanges(mode, specOnly) }, [mode, specOnly])
+  useEffect(() => { loadChanges(specOnly) }, [specOnly])
   useEffect(() => {
     if (selected && view === 'split') {
       openFile(selected)
@@ -112,15 +115,10 @@ export default function DiffView() {
   }, [items])
 
   return (
-    <Flex gap={12} style={{ minHeight: 520 }}>
+    <Flex gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
       <Card size="small" title={
         <Flex align="center" gap={8}>
           <Typography.Text strong>Changes</Typography.Text>
-          <Radio.Group size="small" value={mode} onChange={e => setMode(e.target.value)}>
-            <Radio.Button value="all">All</Radio.Button>
-            <Radio.Button value="staged">Staged</Radio.Button>
-            <Radio.Button value="worktree">Worktree</Radio.Button>
-          </Radio.Group>
           <Radio checked={specOnly} onChange={e => setSpecOnly(e.target.checked)}>Spec only</Radio>
           <div style={{ flex: 1 }} />
           <Radio.Group size="small" value={view} onChange={e => setView(e.target.value)}>
@@ -128,7 +126,7 @@ export default function DiffView() {
             <Radio.Button value="unified">Unified</Radio.Button>
           </Radio.Group>
         </Flex>
-      } style={{ width: 420, flex: '0 0 auto' }} bodyStyle={{ maxHeight: 640, overflow: 'auto' }}>
+      } style={{ width: 420, flex: '0 0 auto', height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {Object.keys(grouped).map(group => (
           <div key={group} style={{ marginBottom: 8 }}>
             <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>{group}</Typography.Text>
@@ -145,7 +143,7 @@ export default function DiffView() {
           </div>
         ))}
       </Card>
-      <Card size="small" style={{ flex: 1 }} title={selected ? selected.path : 'Diff'} bodyStyle={{ maxHeight: 640, overflow: 'auto' }}>
+      <Card size="small" style={{ flex: 1, minWidth: 0, height: '100%' }} title={selected ? selected.path : 'Diff'} bodyStyle={{ height: '100%', overflow: 'auto', maxWidth: '100%' }}>
         {view === 'split'
           ? (splitRows && splitRows.length ? <SplitDiff rows={splitRows} /> : <Typography.Text type="secondary">No diff</Typography.Text>)
           : (diff ? <DiffBody diff={diff} /> : <Typography.Text type="secondary">No diff</Typography.Text>)}

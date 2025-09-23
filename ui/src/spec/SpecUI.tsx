@@ -1,28 +1,51 @@
 import React, { useMemo, useState } from 'react'
-import { Layout, Tabs, Typography } from 'antd'
+import { Layout, Menu, theme } from 'antd'
+import { FolderOpenOutlined, DiffOutlined, ToolOutlined } from '@ant-design/icons'
 import Explorer from './Explorer'
 import DiffView from './Diff'
 import WorkView from './Work'
 
-const { Header, Content } = Layout
+const { Sider, Content } = Layout
 
 export default function SpecUI() {
+  const { token } = theme.useToken()
   const [tab, setTab] = useState<string>('explorer')
-  const items = useMemo(() => ([
-    { key: 'explorer', label: 'Explorer', children: <Explorer /> },
-    { key: 'diff', label: 'Diff', children: <DiffView /> },
-    { key: 'work', label: 'Work', children: <WorkView /> },
+
+  const menuItems = useMemo(() => ([
+    { key: 'explorer', icon: <FolderOpenOutlined />, label: 'Explorer' },
+    { key: 'diff', icon: <DiffOutlined />, label: 'Diff' },
+    { key: 'work', icon: <ToolOutlined />, label: 'Work' },
   ]), [])
+
+  const body = useMemo(() => {
+    switch (tab) {
+      case 'diff': return <DiffView />
+      case 'work': return <WorkView />
+      case 'explorer':
+      default: return <Explorer />
+    }
+  }, [tab])
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ padding: '12px 16px' }}>
-        <Typography.Title level={4} style={{ margin: 0, color: '#fff' }}>Spec UI</Typography.Title>
-      </Header>
-      <Content style={{ padding: 12 }}>
-        <Tabs activeKey={tab} onChange={setTab as any} items={items as any} />
-      </Content>
-      {/* no footer/status bar */}
+      <Sider theme="dark" width={220} style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}>
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600 }}>
+          codectl
+        </div>
+        <Menu
+          theme="dark"
+          mode="inline"
+          selectedKeys={[tab]}
+          items={menuItems as any}
+          onClick={(info) => setTab(info.key)}
+          style={{ borderRight: 0 }}
+        />
+      </Sider>
+      <Layout>
+        <Content style={{ padding: 12 }}>
+          {body}
+        </Content>
+      </Layout>
     </Layout>
   )
 }

@@ -86,8 +86,8 @@ export default function Explorer() {
   }
 
   return (
-    <Flex gap={12} style={{ minHeight: 520 }}>
-      <Card size="small" title="Files" style={{ width: 360, flex: '0 0 auto' }} bodyStyle={{ maxHeight: 640, overflow: 'auto' }}>
+    <Flex gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+      <Card size="small" title="Files" style={{ width: 360, flex: '0 0 auto', height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {loading && <Spin />}
         {!loading && (
           <Tree
@@ -101,12 +101,12 @@ export default function Explorer() {
           />
         )}
       </Card>
-      <Card size="small" style={{ flex: 1 }} title={
+      <Card size="small" style={{ flex: 1, minWidth: 0, height: '100%' }} title={
         <Flex gap={8}>
           <Typography.Text strong>Preview</Typography.Text>
           {doc?.path && <Typography.Text type="secondary">{doc.path}</Typography.Text>}
         </Flex>
-      } bodyStyle={{ maxHeight: 640, overflow: 'auto' }}>
+      } bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {!doc && <Typography.Text type="secondary">Select a file (.spec.mdx) on the left to preview.</Typography.Text>}
         {doc && (
           <div style={{ paddingRight: 8 }}>

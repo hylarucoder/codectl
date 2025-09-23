@@ -43,35 +43,19 @@ go build -o codectl
 codectl                         # Start embedded Web UI server (default)
 codectl -a 127.0.0.1:8787 -o    # Bind address and open browser
 codectl webui -o               # Same as above, explicit subcommand
-# TODO: optimize this
-# shortcut for: codex --dangerously-bypass-approvals-and-sandbox -m gpt-5 -c model_reasoning_effort=high
 codectl codex                   # codex + GPT‑5 (high effort)
-# TODO: implement this
 codectl update                  # Self‑update from GitHub Releases (planned)
 codectl version                 # Print codectl version (numeric only; script‑friendly)
-# TODO: maybe better TUI
 codectl config                  # Init and print config dir (generate provider/models/mcp files)
-
-codectl spec                    # Open interactive Spec UI (table picker + left Markdown + right logs + bottom input)
-codectl spec new "<desc>"       # Call codex exec to draft a spec and save to vibe-docs/spec
-
-codectl check                   # Validate frontmatter of .spec.mdx under vibe-docs/spec (title required)
-codectl check --json            # Output JSON report
-
-codectl provider sync           # Manually sync/generate ~/.codectl/provider.json (then customize)
-codectl provider schema         # Print JSON Schema of provider.json (for validation/completion)
 ```
 
 Note: All install/remove/upgrade/status operations run inside the TUI via slash commands: /add, /remove, /upgrade, /status. No separate "codectl cli add/remove/..." subcommands are provided currently.
 
 ## Roadmap
 
-- [ ] 
-    1. Prototype
-- [ ] 
-    2. Better Spec TUI
-- [ ] 
-    3. Config Wizard (MCP/Custom Provider)
+- [ ] 1. Prototype
+- [ ] 2. Better Spec TUI
+- [ ] 3. Config Wizard (MCP/Custom Provider)
 
 ## Development & Build
 

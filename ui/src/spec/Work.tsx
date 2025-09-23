@@ -39,7 +39,7 @@ export default function WorkView() {
   ]
 
   return (
-    <Flex vertical gap={12}>
+    <Flex vertical gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
       <Card size="small" title="Filters">
         <Flex gap={8} wrap>
           <Select size="small" value={status} onChange={setStatus} options={[{ value: 'All' }, 'backlog','in-progress','blocked','done','draft','accepted'].map(v => ({ value: typeof v === 'string' ? v : v.value }))} />
@@ -48,8 +48,10 @@ export default function WorkView() {
           <Input size="small" placeholder="search" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
         </Flex>
       </Card>
-      <Card size="small" title={<Typography.Text strong>Tasks</Typography.Text>}>
-        <Table rowKey={(r) => r.path} dataSource={tasks} columns={cols} pagination={{ pageSize: 10 }} />
+      <Card size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ height: '100%', overflow: 'auto' }} title={<Typography.Text strong>Tasks</Typography.Text>}>
+        <div style={{ minHeight: '100%' }}>
+          <Table rowKey={(r) => r.path} dataSource={tasks} columns={cols} pagination={{ pageSize: 10 }} />
+        </div>
       </Card>
     </Flex>
   )
