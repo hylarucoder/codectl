@@ -1,21 +1,15 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
 import { Layout, Menu, theme } from 'antd'
 import { HomeOutlined, FolderOpenOutlined, DiffOutlined, ToolOutlined, SettingOutlined, CodeOutlined } from '@ant-design/icons'
-import Home from './home/Home'
-import Explorer from './spec/Explorer'
-import DiffView from './spec/Diff'
-import WorkView from './spec/Work'
-import Settings from './settings/Settings'
-import TerminalView from './terminal/TerminalView'
+import { Outlet, useLocation, useNavigate } from 'react-router'
 
 const { Sider, Content } = Layout
 
 export default function App() {
   const { token } = theme.useToken()
-  const [tab, setTab] = useState<string>(() => {
-    const h = (typeof location !== 'undefined' ? location.hash : '').replace(/^#/, '')
-    return h && ['home','explorer','diff','work','terminal','settings'].includes(h) ? h : 'home'
-  })
+  const location = useLocation()
+  const navigate = useNavigate()
+  const pathname = (location.pathname.replace(/^\/+/, '') || 'home')
   const menuItems = useMemo(() => ([
     { key: 'home', icon: <HomeOutlined />, label: 'Home' },
     { key: 'explorer', icon: <FolderOpenOutlined />, label: 'Explorer' },
@@ -24,37 +18,22 @@ export default function App() {
     { key: 'terminal', icon: <CodeOutlined />, label: 'Terminal' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ]), [])
-  const body = useMemo(() => {
-    switch (tab) {
-      case 'explorer': return <Explorer />
-      case 'diff': return <DiffView />
-      case 'work': return <WorkView />
-      case 'terminal': return <TerminalView />
-      case 'settings': return <Settings />
-      case 'home':
-      default: return <Home />
-    }
-  }, [tab])
-
-  // keep hash in sync
-  function onSelect(next: string) {
-    setTab(next)
-    if (typeof history !== 'undefined') {
-      const url = next ? `#${next}` : '#home'
-      history.replaceState(null, '', url)
-    }
-  }
+  const onSelect = (next: string) => navigate(next === 'home' ? '/' : `/${next}`)
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider theme="dark" width={220} style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}>
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600 }}>
+        <div
+          style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600, cursor: 'pointer' }}
+          onClick={() => onSelect('home')}
+          title="Go Home"
+        >
           codectl
         </div>
         <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[tab]}
+          selectedKeys={[pathname]}
           items={menuItems as any}
           onClick={(info) => onSelect(info.key)}
           style={{ borderRight: 0 }}
@@ -63,7 +42,7 @@ export default function App() {
       <Layout style={{ minHeight: '100vh' }}>
         <Content style={{ padding: 12, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
           <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-            {body}
+            <Outlet />
           </div>
         </Content>
       </Layout>

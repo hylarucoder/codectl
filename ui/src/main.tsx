@@ -1,7 +1,15 @@
-import React from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App'
-import 'antd/dist/reset.css'
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { RouterProvider } from "react-router";
+import { StyleProvider } from "@ant-design/cssinjs";
+import { ConfigProvider } from "antd";
+import router from "./router";
+import "./styles/tailwind.css";
 
-createRoot(document.getElementById('root')!).render(<App />)
-
+createRoot(document.getElementById("root")!).render(
+  <StyleProvider layer>
+    <ConfigProvider>
+      <RouterProvider router={router} />
+    </ConfigProvider>
+  </StyleProvider>,
+);

@@ -33,7 +33,7 @@ var webuiCmd = &cobra.Command{
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
 
-		url := fmt.Sprintf("http://%s/_/", addr)
+		url := fmt.Sprintf("http://%s/", addr)
 		system.Logger.Info("starting webui", "url", url)
 		if open {
 			if err := server.OpenBrowser(url); err != nil {

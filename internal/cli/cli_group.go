@@ -24,7 +24,7 @@ var cliCmd = &cobra.Command{
 		srv := &server.Server{Addr: addr}
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer cancel()
-		url := fmt.Sprintf("http://%s/_/", addr)
+		url := fmt.Sprintf("http://%s/", addr)
 		system.Logger.Info("opening Web UI", "url", url)
 		if err := server.OpenBrowser(url); err != nil {
 			system.Logger.Warn("failed to open browser", "err", err)

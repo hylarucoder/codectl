@@ -22,7 +22,7 @@ depends:
 - Gin 路由 + 中间件：请求 ID、安全头、恢复、限流、CORS、Gzip、鉴权、活动日志。
 - GORM/SQLite（默认）：用户与活动日志等持久化，零依赖本地开发体验；可切换 Postgres。
 - 文件存储：支持本地目录持久化与按路径访问；上传到 `/api/upload`，访问 `/files/*`。
-- 嵌入前端：`go:embed` 打包 `web/dist`，以 `/_/*` 路径提供，支持 SPA 回退。
+- 嵌入前端：`go:embed` 打包 `web/dist`，以 `/*` 根路径提供，支持 SPA 回退。
 - 与现有 Web UI（见 `webui.spec.mdx`）对齐：继续提供 `/api/health`、`/api/version`、`/api/providers`（文件后端），其余通用能力（鉴权、审计、文件）由本规范补齐。
 
 ## 目标与用例
@@ -158,7 +158,7 @@ Web UI（配置编辑，与 `webui.spec.mdx` 对齐）：
 
 嵌入式 UI：
 
-- `GET /_/*path` → 从 `embed.DistFS` 提供静态资源，未知路径回退 `index.html`（SPA）。
+- `GET /*path` → 从 `embed.DistFS` 提供静态资源，未知路径回退 `index.html`（SPA）。
 
 ## 路由与中间件（伪代码）
 
@@ -192,7 +192,7 @@ func Router(cfg *config.Config, gdb *gorm.DB) *gin.Engine {
   api.PUT("/providers", providersPut)
 
   mountFiles(r, storage.New(cfg))
-  mountEmbeddedUI(r) // serve /_/* with index fallback
+  mountEmbeddedUI(r) // serve /* with index fallback
   return r
 }
 ```
@@ -257,14 +257,14 @@ cmd := &cobra.Command{Use: "serve", Short: "Start HTTP server", RunE: func(cmd *
 ## 运维与 DX
 
 - `make web-build`：构建 SPA；
-- `go build`：若 `web/dist` 存在则嵌入；否则访问 `/_/*` 返回 404 并输出提示。
-- `codectl serve --open`：启动后自动打开浏览器（`http://127.0.0.1:8080/_/`）。
+- `go build`：若 `web/dist` 存在则嵌入；否则访问前端路径返回 404 并输出提示。
+- `codectl serve --open`：启动后自动打开浏览器（`http://127.0.0.1:8080/`）。
 
 ## 验收标准
 
 - `codectl serve` 能启动 Gin 服务器，默认绑定 `127.0.0.1:8080`。
 - 默认数据库为 sqlite：未设置 `DB_DRIVER` 时在 `~/.codectl/codectl.db` 创建并运行迁移。
-- 访问 `/_/` 能加载嵌入的前端（若内置 `web/dist` 存在）。
+- 访问 `/` 能加载嵌入的前端（若内置 `web/dist` 存在）。
 - `POST /api/auth/superuser/init` 能创建首位超级管理员；`/api/auth/login` 能签发 JWT；`/api/me` 返回当前用户。
 - `GET/POST /api/users` 由权限正确控制。
 - `POST /api/upload` 能保存文件并返回可访问的 URL；`/files/*` 能正确回源。

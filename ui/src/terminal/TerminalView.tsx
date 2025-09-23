@@ -15,9 +15,12 @@ export default function TerminalView() {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       cursorBlink: true,
-      allowTransparency: true,
+      allowTransparency: false,
       theme: {
-        background: 'rgba(0,0,0,0)',
+        background: '#2d2E2c',
+        foreground: '#F0F0F0',
+        cursor: '#FFFFFF',
+        selectionBackground: '#3a3c38',
       },
     })
     const fit = new FitAddon()
@@ -80,7 +83,15 @@ export default function TerminalView() {
     }
     window.addEventListener('resize', onWindowResize)
 
+    const onContainerClick = () => {
+      term.focus()
+    }
+
+    const el = containerRef.current!
+    el?.addEventListener('click', onContainerClick)
+
     return () => {
+      el?.removeEventListener('click', onContainerClick)
       window.removeEventListener('resize', onWindowResize)
       onData.dispose()
       onResize.dispose()
@@ -90,9 +101,8 @@ export default function TerminalView() {
   }, [])
 
   return (
-    <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0 }} />
+    <div style={{ flex: 1, display: 'flex', minHeight: 0, background: '#2d2E2c' }}>
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0, outline: 'none' }} tabIndex={0} />
     </div>
   )
 }
-

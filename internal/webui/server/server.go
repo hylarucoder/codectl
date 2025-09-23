@@ -105,20 +105,30 @@ func mountEmbeddedUIGin(r *gin.Engine) {
 	// create sub FS at dist
 	dist, err := fs.Sub(webembed.DistFS, "dist")
 	if err != nil {
-		// serve helpful 404 for non-API
-		// Redirect root to /_/ for a stable mount point
-		r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/_/") })
-		r.GET("/_/*path", func(c *gin.Context) {
-			c.String(http.StatusNotFound, "webui assets not found. Build frontend into web/dist and recompile.")
+		// Serve helpful 404 for non-API via NoRoute
+		r.NoRoute(func(c *gin.Context) {
+			if strings.HasPrefix(c.Request.URL.Path, "/api/") || c.Request.URL.Path == "/api" {
+				c.Status(http.StatusNotFound)
+				return
+			}
+			c.String(http.StatusNotFound, "webui assets not found. Build frontend into ui/dist and recompile.")
 		})
 		return
 	}
 	httpFS := http.FS(dist)
-	// Redirect root to /_/
-	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/_/") })
-	// Serve embedded UI under /_/*path
-	r.GET("/_/*path", func(c *gin.Context) {
-		p := strings.TrimPrefix(c.Param("path"), "/")
+	// Serve embedded UI at root with SPA fallback using NoRoute to avoid wildcard conflicts
+	r.NoRoute(func(c *gin.Context) {
+		// Do not hijack API routes
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") || c.Request.URL.Path == "/api" {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		// Only handle GET/HEAD for SPA assets
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		p := strings.TrimPrefix(c.Request.URL.Path, "/")
 		if p == "" {
 			p = "index.html"
 		}
@@ -132,8 +142,7 @@ func mountEmbeddedUIGin(r *gin.Engine) {
 			c.FileFromFS(p, httpFS)
 			return
 		}
-		// fallback to index
-		// ensure index exists
+		// fallback to index.html
 		if _, err := httpFS.Open("index.html"); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				c.String(http.StatusNotFound, "index.html not found in embedded dist.")
