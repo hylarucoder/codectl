@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Card, Flex, Input, Select, Table, Typography } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { Card, Flex, Input, Select, Typography } from 'antd'
+import { DataTable } from '@/components/tasks/data-table'
+import { taskColumns } from '@/components/tasks/columns'
 import { api } from '../lib/api'
 import type { TaskItem } from '../types'
 
@@ -30,14 +31,6 @@ export default function WorkView() {
 
   useEffect(() => { load() }, [status, owner, priority, q])
 
-  const cols: ColumnsType<TaskItem> = [
-    { title: 'Task', dataIndex: 'title', key: 'title', render: (v, r) => (<span>{v || r.path}</span>) },
-    { title: 'Status', dataIndex: 'status', key: 'status' },
-    { title: 'Owner', dataIndex: 'owner', key: 'owner' },
-    { title: 'Pri', dataIndex: 'priority', key: 'priority', width: 80 },
-    { title: 'Due', dataIndex: 'due', key: 'due', width: 140 },
-  ]
-
   return (
     <Flex vertical gap={12} className="flex-1 min-h-0 h-full">
       <Card size="small" title="Filters">
@@ -50,7 +43,7 @@ export default function WorkView() {
       </Card>
       <Card size="small" className="flex-1 min-h-0" bodyStyle={{ height: '100%', overflow: 'auto' }} title={<Typography.Text strong>Tasks</Typography.Text>}>
         <div className="min-h-full">
-          <Table rowKey={(r) => r.path} dataSource={tasks} columns={cols} pagination={{ pageSize: 10 }} />
+          <DataTable columns={taskColumns} data={tasks} getRowId={(r) => r.path} />
         </div>
       </Card>
     </Flex>

@@ -4,6 +4,7 @@ import { RouterProvider } from "react-router";
 import { StyleProvider } from "@ant-design/cssinjs";
 import { ConfigProvider } from "antd";
 import router from "./router";
+import "./index.css";
 // Styles are loaded via index.html -> /src/style.css
 
 createRoot(document.getElementById("root")!).render(

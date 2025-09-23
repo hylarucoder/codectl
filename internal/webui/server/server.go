@@ -59,7 +59,7 @@ func OpenBrowser(url string) error {
 }
 
 func mountAPIGin(r *gin.Engine) {
-	api := r.Group("/api")
+    api := r.Group("/api")
 	api.GET("/health", gin.WrapF(func(w http.ResponseWriter, req *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}))
@@ -69,6 +69,10 @@ func mountAPIGin(r *gin.Engine) {
 
 	// providers
 	api.Any("/providers", gin.WrapF(providersHandler))
+
+	// Chat (AI SDK UI message stream - SSE)
+	api.POST("/chat", gin.WrapF(chatHandler))
+	api.GET("/chat/:id/stream", gin.WrapF(chatReconnectHandler))
 
 	// FS
 	api.GET("/fs/tree", gin.WrapF(fsTreeHandler))
