@@ -15,17 +15,35 @@ function SplitDiff({ rows }: { rows: SplitRow[] }) {
       default: return {}
     }
   }
-  const wrap: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }
+  const wrap: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '6ch 1fr 6ch 1fr',
+    columnGap: 8,
+    rowGap: 2,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+  }
   const cellBase: React.CSSProperties = { whiteSpace: 'pre', padding: '0 8px' }
+  const lnStyle: React.CSSProperties = {
+    textAlign: 'right',
+    color: token.colorTextTertiary,
+    userSelect: 'none',
+    padding: '0 4px'
+  }
   return (
     <div style={{ overflow: 'auto' }}>
       <div style={wrap}>
-        {rows.map((r, i) => (
-          <React.Fragment key={i}>
-            <div style={{ ...cellBase, ...cellStyle(r.lt) }}>{r.left}</div>
-            <div style={{ ...cellBase, ...cellStyle(r.rt) }}>{r.right}</div>
-          </React.Fragment>
-        ))}
+        {rows.map((r, i) => {
+          const ln = r.ln ?? ''
+          const rn = r.rn ?? ''
+          return (
+            <React.Fragment key={i}>
+              <div style={lnStyle}>{ln}</div>
+              <div style={{ ...cellBase, ...cellStyle(r.lt) }}>{r.left}</div>
+              <div style={lnStyle}>{rn}</div>
+              <div style={{ ...cellBase, ...cellStyle(r.rt) }}>{r.right}</div>
+            </React.Fragment>
+          )
+        })}
       </div>
     </div>
   )
