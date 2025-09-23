@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react'
 import { Layout, Menu, theme } from 'antd'
-import { HomeOutlined, FolderOpenOutlined, DiffOutlined, ToolOutlined, SettingOutlined } from '@ant-design/icons'
+import { HomeOutlined, FolderOpenOutlined, DiffOutlined, ToolOutlined, SettingOutlined, CodeOutlined } from '@ant-design/icons'
 import Home from './home/Home'
 import Explorer from './spec/Explorer'
 import DiffView from './spec/Diff'
 import WorkView from './spec/Work'
 import Settings from './settings/Settings'
+import TerminalView from './terminal/TerminalView'
 
 const { Sider, Content } = Layout
 
@@ -13,13 +14,14 @@ export default function App() {
   const { token } = theme.useToken()
   const [tab, setTab] = useState<string>(() => {
     const h = (typeof location !== 'undefined' ? location.hash : '').replace(/^#/, '')
-    return h && ['home','explorer','diff','work'].includes(h) ? h : 'home'
+    return h && ['home','explorer','diff','work','terminal','settings'].includes(h) ? h : 'home'
   })
   const menuItems = useMemo(() => ([
     { key: 'home', icon: <HomeOutlined />, label: 'Home' },
     { key: 'explorer', icon: <FolderOpenOutlined />, label: 'Explorer' },
     { key: 'diff', icon: <DiffOutlined />, label: 'Diff' },
     { key: 'work', icon: <ToolOutlined />, label: 'Work' },
+    { key: 'terminal', icon: <CodeOutlined />, label: 'Terminal' },
     { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
   ]), [])
   const body = useMemo(() => {
@@ -27,6 +29,7 @@ export default function App() {
       case 'explorer': return <Explorer />
       case 'diff': return <DiffView />
       case 'work': return <WorkView />
+      case 'terminal': return <TerminalView />
       case 'settings': return <Settings />
       case 'home':
       default: return <Home />

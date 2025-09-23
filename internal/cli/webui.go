@@ -1,13 +1,13 @@
 package cli
 
 import (
-    "context"
-    "fmt"
-    "net/http"
-    "os"
-    "os/signal"
-    "syscall"
-    "errors"
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -33,19 +33,19 @@ var webuiCmd = &cobra.Command{
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
 
-        url := fmt.Sprintf("http://%s/_/", addr)
-        system.Logger.Info("starting webui", "url", url)
+		url := fmt.Sprintf("http://%s/_/", addr)
+		system.Logger.Info("starting webui", "url", url)
 		if open {
 			if err := server.OpenBrowser(url); err != nil {
 				system.Logger.Warn("failed to open browser", "err", err)
 			}
 		}
-        if err := srv.Start(ctx); err != nil {
-            if errors.Is(err, http.ErrServerClosed) {
-                return nil
-            }
-            return err
-        }
-        return nil
-    },
+		if err := srv.Start(ctx); err != nil {
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	},
 }

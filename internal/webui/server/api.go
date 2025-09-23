@@ -9,30 +9,30 @@ import (
 )
 
 func mountAPI(mux *http.ServeMux) {
-    mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-        writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-    })
-    mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
-        writeJSON(w, http.StatusOK, map[string]string{"version": appver.AppVersion})
-    })
-    mux.HandleFunc("/api/providers", providersHandler)
+	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": appver.AppVersion})
+	})
+	mux.HandleFunc("/api/providers", providersHandler)
 
-    // FS
-    mux.HandleFunc("/api/fs/tree", fsTreeHandler)
-    mux.HandleFunc("/api/fs/read", fsReadHandler)
-    mux.HandleFunc("/api/fs/write", fsWriteHandler)
-    mux.HandleFunc("/api/fs/rename", fsRenameHandler)
-    mux.HandleFunc("/api/fs/delete", fsDeleteHandler)
-    mux.HandleFunc("/api/fs/patch", fsPatchHandler)
+	// FS
+	mux.HandleFunc("/api/fs/tree", fsTreeHandler)
+	mux.HandleFunc("/api/fs/read", fsReadHandler)
+	mux.HandleFunc("/api/fs/write", fsWriteHandler)
+	mux.HandleFunc("/api/fs/rename", fsRenameHandler)
+	mux.HandleFunc("/api/fs/delete", fsDeleteHandler)
+	mux.HandleFunc("/api/fs/patch", fsPatchHandler)
 
-    // Spec
-    mux.HandleFunc("/api/spec/docs", specListHandler)
-    mux.HandleFunc("/api/spec/doc", specDocHandler)
-    mux.HandleFunc("/api/spec/validate", specValidateHandler)
+	// Spec
+	mux.HandleFunc("/api/spec/docs", specListHandler)
+	mux.HandleFunc("/api/spec/doc", specDocHandler)
+	mux.HandleFunc("/api/spec/validate", specValidateHandler)
 
-    // Sessions (in-memory MVP)
-    mux.HandleFunc("/api/sessions", sessionsRootHandler)
-    mux.HandleFunc("/api/sessions/", sessionItemHandler) // /api/sessions/{id}/...
+	// Sessions (in-memory MVP)
+	mux.HandleFunc("/api/sessions", sessionsRootHandler)
+	mux.HandleFunc("/api/sessions/", sessionItemHandler) // /api/sessions/{id}/...
 }
 
 func providersHandler(w http.ResponseWriter, r *http.Request) {
