@@ -14,12 +14,12 @@ export const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><Home /></Suspense> },
-      { path: 'explorer', element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><Explorer /></Suspense> },
-      { path: 'diff', element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><DiffView /></Suspense> },
-      { path: 'work', element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><WorkView /></Suspense> },
-      { path: 'terminal', element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><TerminalView /></Suspense> },
-      { path: 'settings', element: <Suspense fallback={<div style={{ padding: 12 }}>Loading…</div>}><Settings /></Suspense> },
+      { index: true, element: <Suspense fallback={<div className="p-3">Loading…</div>}><Home /></Suspense> },
+      { path: 'explorer', element: <Suspense fallback={<div className="p-3">Loading…</div>}><Explorer /></Suspense> },
+      { path: 'diff', element: <Suspense fallback={<div className="p-3">Loading…</div>}><DiffView /></Suspense> },
+      { path: 'work', element: <Suspense fallback={<div className="p-3">Loading…</div>}><WorkView /></Suspense> },
+      { path: 'terminal', element: <Suspense fallback={<div className="p-3">Loading…</div>}><TerminalView /></Suspense> },
+      { path: 'settings', element: <Suspense fallback={<div className="p-3">Loading…</div>}><Settings /></Suspense> },
     ],
   },
 ])

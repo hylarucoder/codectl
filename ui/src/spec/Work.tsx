@@ -39,17 +39,17 @@ export default function WorkView() {
   ]
 
   return (
-    <Flex vertical gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+    <Flex vertical gap={12} className="flex-1 min-h-0 h-full">
       <Card size="small" title="Filters">
         <Flex gap={8} wrap>
           <Select size="small" value={status} onChange={setStatus} options={[{ value: 'All' }, 'backlog','in-progress','blocked','done','draft','accepted'].map(v => ({ value: typeof v === 'string' ? v : v.value }))} />
           <Select size="small" value={owner} onChange={setOwner} options={owners.map(v => ({ value: v }))} />
           <Select size="small" value={priority} onChange={setPriority} options={[{ value: 'All' }, 'P0','P1','P2'].map(v => ({ value: typeof v === 'string' ? v : v.value }))} />
-          <Input size="small" placeholder="search" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 200 }} />
+          <Input size="small" placeholder="search" value={q} onChange={(e) => setQ(e.target.value)} className="w-[200px]" />
         </Flex>
       </Card>
-      <Card size="small" style={{ flex: 1, minHeight: 0 }} bodyStyle={{ height: '100%', overflow: 'auto' }} title={<Typography.Text strong>Tasks</Typography.Text>}>
-        <div style={{ minHeight: '100%' }}>
+      <Card size="small" className="flex-1 min-h-0" bodyStyle={{ height: '100%', overflow: 'auto' }} title={<Typography.Text strong>Tasks</Typography.Text>}>
+        <div className="min-h-full">
           <Table rowKey={(r) => r.path} dataSource={tasks} columns={cols} pagination={{ pageSize: 10 }} />
         </div>
       </Card>

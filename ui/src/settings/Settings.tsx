@@ -108,20 +108,21 @@ export default function Settings() {
   const hint = selectedType ? providerTypeHints[selectedType] : undefined
 
   return (
-    <Flex gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+    <Flex gap={12} className="flex-1 min-h-0 h-full">
       {ctx}
       <Card size="small" title={
         <Flex align="center" justify="space-between">
           <Typography.Text strong>Providers</Typography.Text>
           <Button size="small" icon={<PlusOutlined />} onClick={addProvider}>Add</Button>
         </Flex>
-      } style={{ width: 320, flex: '0 0 auto', height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }}>
+      } className="w-[320px] flex-none h-full" bodyStyle={{ height: '100%', overflow: 'auto' }}>
         <List
           size="small"
           dataSource={providers}
           renderItem={(k) => (
             <List.Item
-              style={{ cursor: 'pointer', background: selected === k ? 'rgba(0,0,0,0.06)' : undefined }}
+              className="cursor-pointer"
+              style={{ background: selected === k ? 'rgba(0,0,0,0.06)' : undefined }}
               onClick={() => setSelected(k)}
               actions={[<Button size="small" key="del" danger type="text" icon={<DeleteOutlined />} onClick={(e) => { e.stopPropagation(); removeProvider(k) }} />]}
             >
@@ -130,7 +131,7 @@ export default function Settings() {
           )}
         />
       </Card>
-      <Card size="small" style={{ flex: 1, minWidth: 0, height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }} title={selected ? `Edit: ${selected}` : 'Select a provider'}
+      <Card size="small" className="flex-1 min-w-0 h-full" bodyStyle={{ height: '100%', overflow: 'auto' }} title={selected ? `Edit: ${selected}` : 'Select a provider'}
         extra={selected && <Space>
           <Input size="small" placeholder="rename key" onPressEnter={(e) => renameProvider((e.target as HTMLInputElement).value.trim())} />
           <Button type="primary" icon={<SaveOutlined />} onClick={save}>Save</Button>
@@ -152,12 +153,12 @@ export default function Settings() {
               <Input placeholder="https://.../v1/" />
             </Form.Item>
             {hint && (
-              <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+              <Typography.Paragraph type="secondary" className="mt-[-8px]">
                 {hint.env ? (<span>Set env var <Tag>{hint.env}</Tag> for auth.</span>) : 'No API key required by default.'}
               </Typography.Paragraph>
             )}
             <Form.Item label="Models" shouldUpdate>
-              <Space direction="vertical" style={{ width: '100%' }}>
+              <Space direction="vertical" className="w-full">
                 <Button size="small" icon={<PlusOutlined />} onClick={addModel}>Add Model</Button>
                 <Form.List name="models">
                   {(fields) => (
@@ -167,10 +168,10 @@ export default function Settings() {
                       dataSource={fields}
                       rowKey={(f) => String(f.key)}
                       columns={[
-                        { title: 'Name', render: (_, f) => (<Form.Item name={[f.name, 'name']} style={{ margin: 0 }}><Input placeholder="friendly name" /></Form.Item>) },
-                        { title: 'ID', render: (_, f) => (<Form.Item name={[f.name, 'id']} style={{ margin: 0 }}><Input placeholder="model id (e.g., claude-3-5-sonnet-latest)" /></Form.Item>) },
-                        { title: 'Ctx', width: 100, render: (_, f) => (<Form.Item name={[f.name, 'context_window']} style={{ margin: 0 }}><InputNumber min={0} placeholder="e.g. 200k" style={{ width: '100%' }} /></Form.Item>) },
-                        { title: 'MaxT', width: 100, render: (_, f) => (<Form.Item name={[f.name, 'default_max_tokens']} style={{ margin: 0 }}><InputNumber min={0} placeholder="e.g. 8192" style={{ width: '100%' }} /></Form.Item>) },
+                        { title: 'Name', render: (_, f) => (<Form.Item name={[f.name, 'name']} className="m-0"><Input placeholder="friendly name" /></Form.Item>) },
+                        { title: 'ID', render: (_, f) => (<Form.Item name={[f.name, 'id']} className="m-0"><Input placeholder="model id (e.g., claude-3-5-sonnet-latest)" /></Form.Item>) },
+                        { title: 'Ctx', width: 100, render: (_, f) => (<Form.Item name={[f.name, 'context_window']} className="m-0"><InputNumber min={0} placeholder="e.g. 200k" className="w-full" /></Form.Item>) },
+                        { title: 'MaxT', width: 100, render: (_, f) => (<Form.Item name={[f.name, 'default_max_tokens']} className="m-0"><InputNumber min={0} placeholder="e.g. 8192" className="w-full" /></Form.Item>) },
                         { title: '', width: 48, render: (_, f, idx) => (<Button danger type="text" icon={<DeleteOutlined />} onClick={() => removeModel(idx)} />) },
                       ]}
                     />
@@ -184,4 +185,3 @@ export default function Settings() {
     </Flex>
   )
 }
-

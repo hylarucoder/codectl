@@ -21,7 +21,7 @@ function fileIcon(path: string, isDir: boolean): React.ReactNode {
 function withIconTitle(name: string, icon: React.ReactNode): React.ReactNode {
   return (
     <span>
-      <span style={{ marginRight: 6, display: 'inline-flex', alignItems: 'center' }}>{icon}</span>
+      <span className="mr-1.5 inline-flex items-center">{icon}</span>
       <span>{name}</span>
     </span>
   )
@@ -86,8 +86,8 @@ export default function Explorer() {
   }
 
   return (
-    <Flex gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
-      <Card size="small" title="Files" style={{ width: 360, flex: '0 0 auto', height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }}>
+    <Flex gap={12} className="flex-1 min-h-0 h-full">
+      <Card size="small" title="Files" className="w-[360px] flex-none h-full" bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {loading && <Spin />}
         {!loading && (
           <Tree
@@ -101,7 +101,7 @@ export default function Explorer() {
           />
         )}
       </Card>
-      <Card size="small" style={{ flex: 1, minWidth: 0, height: '100%' }} title={
+      <Card size="small" className="flex-1 min-w-0 h-full" title={
         <Flex gap={8}>
           <Typography.Text strong>Preview</Typography.Text>
           {doc?.path && <Typography.Text type="secondary">{doc.path}</Typography.Text>}
@@ -109,7 +109,7 @@ export default function Explorer() {
       } bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {!doc && <Typography.Text type="secondary">Select a file (.spec.mdx) on the left to preview.</Typography.Text>}
         {doc && (
-          <div style={{ paddingRight: 8 }}>
+          <div className="pr-2">
             <ReactMarkdown>{stripFrontmatter(doc.content)}</ReactMarkdown>
           </div>
         )}

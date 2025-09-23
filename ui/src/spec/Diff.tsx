@@ -34,7 +34,7 @@ function SplitDiff({ rows }: { rows: SplitRow[] }) {
     padding: '0 4px'
   }
   return (
-    <div style={{ overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%' }}>
+    <div className="overflow-x-auto overflow-y-hidden max-w-full">
       <div style={wrap}>
         {rows.map((r, i) => {
           const ln = r.ln ?? ''
@@ -57,7 +57,7 @@ function DiffBody({ diff }: { diff: string }) {
   const { token } = theme.useToken()
   const lines = (diff || '').split(/\r?\n/)
   return (
-    <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', maxWidth: '100%', overflowX: 'auto', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+    <pre className="whitespace-pre-wrap m-0 font-mono max-w-full overflow-x-auto break-words" style={{ overflowWrap: 'anywhere' }}>
       {lines.map((ln, i) => {
         let color = token.colorText
         if (ln.startsWith('+') && !ln.startsWith('+++')) color = token.colorSuccess
@@ -115,35 +115,35 @@ export default function DiffView() {
   }, [items])
 
   return (
-    <Flex gap={12} style={{ flex: 1, minHeight: 0, height: '100%' }}>
+    <Flex gap={12} className="flex-1 min-h-0 h-full">
       <Card size="small" title={
         <Flex align="center" gap={8}>
           <Typography.Text strong>Changes</Typography.Text>
           <Radio checked={specOnly} onChange={e => setSpecOnly(e.target.checked)}>Spec only</Radio>
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
           <Radio.Group size="small" value={view} onChange={e => setView(e.target.value)}>
             <Radio.Button value="split">Side by side</Radio.Button>
             <Radio.Button value="unified">Unified</Radio.Button>
           </Radio.Group>
         </Flex>
-      } style={{ width: 420, flex: '0 0 auto', height: '100%' }} bodyStyle={{ height: '100%', overflow: 'auto' }}>
+      } className="w-[420px] flex-none h-full" bodyStyle={{ height: '100%', overflow: 'auto' }}>
         {Object.keys(grouped).map(group => (
-          <div key={group} style={{ marginBottom: 8 }}>
-            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>{group}</Typography.Text>
+          <div key={group} className="mb-2">
+            <Typography.Text type="secondary" className="block mb-1">{group}</Typography.Text>
             <List
               size="small"
               dataSource={grouped[group]}
               renderItem={(it) => (
-                <List.Item style={{ cursor: 'pointer', background: selected?.path === it.path ? token.colorFillSecondary : undefined }} onClick={() => openFile(it)}>
+                <List.Item className="cursor-pointer" style={{ background: selected?.path === it.path ? token.colorFillSecondary : undefined }} onClick={() => openFile(it)}>
                   <Typography.Text>{it.path}</Typography.Text>
-                  <Typography.Text type="secondary" style={{ marginLeft: 8 }}>{it.status}</Typography.Text>
+                  <Typography.Text type="secondary" className="ml-2">{it.status}</Typography.Text>
                 </List.Item>
               )}
             />
           </div>
         ))}
       </Card>
-      <Card size="small" style={{ flex: 1, minWidth: 0, height: '100%' }} title={selected ? selected.path : 'Diff'} bodyStyle={{ height: '100%', overflow: 'auto', maxWidth: '100%' }}>
+      <Card size="small" className="flex-1 min-w-0 h-full" title={selected ? selected.path : 'Diff'} bodyStyle={{ height: '100%', overflow: 'auto', maxWidth: '100%' }}>
         {view === 'split'
           ? (splitRows && splitRows.length ? <SplitDiff rows={splitRows} /> : <Typography.Text type="secondary">No diff</Typography.Text>)
           : (diff ? <DiffBody diff={diff} /> : <Typography.Text type="secondary">No diff</Typography.Text>)}

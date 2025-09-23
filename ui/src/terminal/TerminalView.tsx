@@ -101,8 +101,8 @@ export default function TerminalView() {
   }, [])
 
   return (
-    <div style={{ flex: 1, display: 'flex', minHeight: 0, background: '#2d2E2c' }}>
-      <div ref={containerRef} style={{ flex: 1, minHeight: 0, outline: 'none' }} tabIndex={0} />
+    <div className="flex-1 flex min-h-0 bg-[#2d2E2c]">
+      <div ref={containerRef} className="flex-1 min-h-0 outline-none" tabIndex={0} />
     </div>
   )
 }

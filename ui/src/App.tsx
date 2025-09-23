@@ -21,10 +21,11 @@ export default function App() {
   const onSelect = (next: string) => navigate(next === 'home' ? '/' : `/${next}`)
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="min-h-screen">
       <Sider theme="dark" width={220} style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}>
         <div
-          style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600, cursor: 'pointer' }}
+          className="h-12 flex items-center px-4 font-semibold cursor-pointer"
+          style={{ color: token.colorTextLightSolid }}
           onClick={() => onSelect('home')}
           title="Go Home"
         >
@@ -39,9 +40,9 @@ export default function App() {
           style={{ borderRight: 0 }}
         />
       </Sider>
-      <Layout style={{ minHeight: '100vh' }}>
-        <Content style={{ padding: 12, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-          <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      <Layout className="min-h-screen">
+        <Content className="p-3 flex flex-col h-full min-h-0">
+          <div className="flex-1 min-h-0 flex">
             <Outlet />
           </div>
         </Content>

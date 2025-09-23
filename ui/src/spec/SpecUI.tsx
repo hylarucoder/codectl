@@ -27,9 +27,9 @@ export default function SpecUI() {
   }, [tab])
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout className="min-h-screen">
       <Sider theme="dark" width={220} style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}>
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600 }}>
+        <div className="h-12 flex items-center px-4 font-semibold" style={{ color: token.colorTextLightSolid }}>
           codectl
         </div>
         <Menu
@@ -42,7 +42,7 @@ export default function SpecUI() {
         />
       </Sider>
       <Layout>
-        <Content style={{ padding: 12 }}>
+        <Content className="p-3">
           {body}
         </Content>
       </Layout>
