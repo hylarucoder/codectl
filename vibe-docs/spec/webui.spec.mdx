@@ -1,0 +1,228 @@
+---
+title: codectl Web UI (MVP)
+status: draft
+owners:
+  - @lucasay
+created: 2025-09-24
+updated: 2025-09-24
+depends:
+  - 000-overall.spec.mdx
+  - 200-llm-provider.spec.mdx
+  - 201-tui-spec-ui.spec.mdx
+  - 202-tui-specui-tabs-diff.spec.mdx
+---
+
+# Web UI (MVP)
+
+This spec defines a minimal web UI for codectl, modeled after the rockbase approach: a small HTTP server exposing JSON endpoints and a static SPA built with Vite + React, embedded into the Go binary via `go:embed`, and mounted under a path prefix with index fallback.
+
+The goal is to provide a quick visual way to inspect codectl state (version, provider catalog) and edit/save the provider catalog file (`~/.codectl/provider.json`) without leaving the browser.
+
+Non-goal: replacing the TUI; this is a utility/companion view focused on read/write of config and basic health/status.
+
+## Summary
+
+- Single-binary delivery: UI embedded using `go:embed` and served at `/` with SPA fallback (same pattern as rockbase).
+- Local-only HTTP server started via `codectl webui` (default bind `127.0.0.1:8787`).
+- Minimal backend API for version, health, and provider catalog read/write.
+- Simple Vite + React SPA: Dashboard + Providers editor.
+
+## User Stories
+
+- As a user, I can open `http://127.0.0.1:8787/` to see codectl version, health, and a summary of configured providers.
+- As a user, I can view and edit the provider catalog and save changes back to `~/.codectl/provider.json`.
+- As a user, I can refresh and see updated provider data without restarting the server.
+
+## Architecture
+
+### Backend (Go)
+
+- New package `internal/webui/server` with a small HTTP server (stdlib `net/http`).
+- Routes:
+  - `GET  /api/health` → `{ status: "ok" }`.
+  - `GET  /api/version` → `{ version: string }` from `internal/version`.
+  - `GET  /api/providers` → returns `provider.CatalogV2` (marshaled per existing MarshalJSON).
+  - `PUT  /api/providers` → accepts `CatalogV2` shape and persists via `provider.SaveV2`.
+  - `GET  /*` (except `/api/*`) → serve embedded SPA with index.html fallback.
+- CORS: not needed for same-origin (the SPA is served from the same server). Keep code simple.
+- Logging: reuse `internal/system.Logger` for startup and request errors.
+- Binding: default `127.0.0.1:8787`; flag `--addr` to override.
+- Optional flag `--open` to open the browser automatically.
+
+Embedding:
+
+- New module `web/` (Vite + React). `npm run build` produces `web/dist`.
+- New Go package `internal/webui/embed`:
+  - `//go:embed all:dist`
+  - `var DistFS fs.FS` (sub of `dist`) like rockbase `web/embed.go`.
+- Server serves from `http.FS(DistFS)` with SPA fallback at `/` (catch-all except `/api/*`).
+
+### CLI
+
+- New Cobra command: `codectl webui`.
+  - Flags:
+    - `--addr` (string, default `127.0.0.1:8787`)
+    - `--open` (bool, default false)
+  - Behavior: start server, log URL, optionally open browser.
+  - Shutdown: Ctrl+C to stop (contexts respected).
+
+## Frontend (SPA)
+
+Tech: Vite + React (keep deps minimal). Tailwind optional (not required for MVP).
+
+Pages (2):
+
+1) Dashboard
+   - Show codectl version (`/api/version`).
+   - Health check result (`/api/health`).
+   - Providers summary (count of providers, total models).
+
+2) Providers
+   - Table view: provider key, name, type, baseURL, model count.
+   - Edit mode: simple JSON editor bound to full catalog JSON.
+   - Actions: Save (PUT `/api/providers`), Revert (reload GET), Validate (client-side shape checks: keys are strings; provider has `name`, `type`, `base_url`; `models` list containing `{id|name}` strings; leave deeper validation to backend).
+
+Design basics:
+
+- Top nav with two tabs (Dashboard, Providers).
+- Keep UI neutral and accessible; no dark-mode requirement in MVP.
+- Error toasts modally or inline messages below actions.
+
+## API Details
+
+`GET /api/health`
+
+Response: `{ "status": "ok" }` (HTTP 200).
+
+`GET /api/version`
+
+Response: `{ "version": "0.0.1" }` (HTTP 200) reading from `internal/version.AppVersion`.
+
+`GET /api/providers`
+
+- Returns the v2 catalog as a single JSON object per existing `CatalogV2.MarshalJSON`.
+- Example:
+
+```json
+{
+  "ollama": {
+    "name": "Ollama",
+    "base_url": "http://localhost:11434/v1/",
+    "type": "openai",
+    "models": []
+  }
+}
+```
+
+`PUT /api/providers`
+
+- Body: same shape as `GET /api/providers`.
+- Behavior: Unmarshal into `provider.CatalogV2`, `SaveV2` to `~/.codectl/provider.json`.
+- Responses:
+  - 200 on success and return the normalized catalog in the body.
+  - 400 on invalid shape.
+  - 500 on IO error.
+
+## Security
+
+- Local tool. Defaults to loopback only (`127.0.0.1`). Users can opt into a different bind via `--addr`.
+- No auth in MVP. If bound to non-loopback, a console warning is printed.
+
+## Testing
+
+- Backend unit tests for handlers:
+  - Health and version return expected payload.
+  - Providers GET/PUT use `t.TempDir()` and `internal/testutil.WithEnv` to isolate `HOME`.
+  - PUT normalizes and persists, then GET returns the normalized content.
+- No frontend tests in MVP.
+
+## DX & Build
+
+- `make web-start` (optional): run Vite dev server for frontend iteration (not embedded).
+- `make web-build`: build SPA (`npm ci && npm run build` in `web/`).
+- `go build`: embeds `web/dist` if present; if not, server still runs but returns 404 for SPA routes (non-`/api/*`) with a clear warning.
+- `codectl webui --open`: opens `http://127.0.0.1:8787/`.
+
+Notes:
+
+- Mirror rockbase pattern: embed `dist` and mount at `/` with index fallback.
+- Keep backend dependency surface minimal (stdlib only) in codectl.
+
+## File/Module Layout
+
+Backend:
+
+- `internal/webui/server/server.go` – HTTP server wiring and route registration.
+- `internal/webui/server/api.go` – handlers for health, version, providers.
+- `internal/webui/embed/embed.go` – `//go:embed all:dist` exposing `DistFS`.
+- `internal/cli/webui.go` – Cobra command `webui`.
+
+Frontend:
+
+- `web/` – Vite + React app
+  - `index.html`, `src/main.jsx`, `src/App.jsx`, `src/api.js`
+  - `package.json`, `vite.config.js`
+  - Build output `web/dist/` (embedded)
+
+## Pseudo-code (Backend)
+
+```go
+// server.go
+type Server struct {
+  Addr string
+  Logger *log.Logger
+}
+
+func (s *Server) Start(ctx context.Context) error {
+  mux := http.NewServeMux()
+  mountAPI(mux)
+  mountEmbeddedUI(mux)
+  srv := &http.Server{Addr: s.Addr, Handler: logMiddleware(mux)}
+  go func(){ <-ctx.Done(); _ = srv.Shutdown(context.Background()) }()
+  return srv.ListenAndServe()
+}
+
+// api.go
+func mountAPI(mux *http.ServeMux) {
+  mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request){ writeJSON(w, 200, map[string]string{"status":"ok"}) })
+  mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request){ writeJSON(w, 200, map[string]string{"version": version.AppVersion}) })
+  mux.HandleFunc("/api/providers", providersHandler)
+}
+
+func providersHandler(w http.ResponseWriter, r *http.Request) {
+  switch r.Method {
+  case http.MethodGet:
+    cat, _ := provider.LoadV2()
+    writeJSON(w, 200, cat)
+  case http.MethodPut:
+    var cat provider.CatalogV2
+    if err := json.NewDecoder(r.Body).Decode(&cat); err != nil { writeJSON(w, 400, errJSON(err)); return }
+    if err := provider.SaveV2(cat); err != nil { writeJSON(w, 500, errJSON(err)); return }
+    writeJSON(w, 200, cat)
+  default:
+    w.WriteHeader(405)
+  }
+}
+
+// embed.go
+// http.FS(embed.DistFS), mount at "/" (catch-all except /api/*) with index fallback.
+```
+
+## Rollout Plan
+
+1) Land backend server + CLI command behind a new subcommand `webui`.
+2) Land minimal SPA files and embed wiring (server serves 404 if dist missing).
+3) Iteratively improve UX (client-side validations, table editing, better toasts).
+
+## Acceptance Criteria
+
+- `codectl webui` starts a local HTTP server on `127.0.0.1:8787`.
+- Visiting `/` loads the embedded SPA and displays version and health.
+- `GET /api/providers` returns the current catalog (default if absent).
+- Editing and saving via the UI triggers `PUT /api/providers` and persists changes.
+- All new code formatted with `go fmt`, includes basic unit tests for API handlers, and does not add unnecessary deps.
+
+## Open Questions
+
+- Should we include schema validation on PUT using `internal/provider/schema.go`? (MVP can skip; follow-up to add.)
+- Do we want to expose more codectl internals (e.g., models/providers operations) in the UI? (Out of MVP scope.)

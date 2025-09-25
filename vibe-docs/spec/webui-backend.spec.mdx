@@ -1,0 +1,278 @@
+---
+title: Web UI 后端（Gin + GORM）
+status: draft
+owners:
+  - @lucasay
+created: 2025-09-24
+updated: 2025-09-24
+depends:
+  - 000-overall.spec.mdx
+  - webui.spec.mdx
+---
+
+# Web UI 后端（Gin + GORM）
+
+参考 `rockbase` 的 server + GORM 方案，为 codectl 的 Web UI 提供一套更完整、可扩展的本地后端：Gin 作为 HTTP 框架，GORM 管理持久化，内置鉴权、中间件、活动审计与静态资源嵌入。目标是复用成熟架构与代码组织约定，最小代价落地。
+
+非目标：替换 TUI；线上多租户后端；引入外部依赖服务（默认无需外部 DB）。
+
+## 摘要
+
+- 单进程服务：`codectl serve` 提供 HTTP API 与嵌入式 Web 前端；可选 `--auto-migrate` 进行 GORM 迁移。
+- Gin 路由 + 中间件：请求 ID、安全头、恢复、限流、CORS、Gzip、鉴权、活动日志。
+- GORM/SQLite（默认）：用户与活动日志等持久化，零依赖本地开发体验；可切换 Postgres。
+- 文件存储：支持本地目录持久化与按路径访问；上传到 `/api/upload`，访问 `/files/*`。
+- 嵌入前端：`go:embed` 打包 `web/dist`，以 `/*` 根路径提供，支持 SPA 回退。
+- 与现有 Web UI（见 `webui.spec.mdx`）对齐：继续提供 `/api/health`、`/api/version`、`/api/providers`（文件后端），其余通用能力（鉴权、审计、文件）由本规范补齐。
+
+## 目标与用例
+
+- 本地安全访问：默认仅监听回环（`127.0.0.1`），开发者本机使用。
+- 用户与权限：首位超级管理员创建、登录、发 JWT；后续接口基于角色控制。
+- 基本审计：记录请求方法、路径、状态码、耗时、用户、IP/UA、错误码。
+- 文件：上传与公开访问，用于 Web UI 资产（如截图、导出文件）。
+- 配置编辑：通过 `/api/providers` 读取/写入 `~/.codectl/provider.json`（保持与现有实现一致）。
+
+## 架构设计
+
+### 目录与模块
+
+- `internal/db/`
+  - `db.go`：初始化 GORM（默认 `sqlite` 驱动；可选 `postgres`）、连接与 `AutoMigrate`。
+- `internal/model/`
+  - `user.go`：`User{ID, Email, Name, Role, PasswordHash, CreatedAt, UpdatedAt}`。
+  - `activity_log.go`：`ActivityLog{Method, Path, Status, DurationMs, UserID, TraceID, IP, UA, ErrorCode, ErrorMessage, CreatedAt}`。
+  - `file_object.go`：`FileObject{Path, Name, Size, Mime, OwnerID, CreatedAt}`。
+- `internal/httpx/`
+  - `router.go`：Gin 路由装配、API 分组、嵌入式 UI 挂载、文件服务。
+  - `middleware_*.go`：`RequestID`、`Recoverer`、`SecurityHeaders`、`CORS`、`Gzip`、`Auth`、`RateLimit`、`ActivityLogger`。
+  - `response.go`：统一错误响应结构与辅助函数（`BadRequest/Unauthorized/Forbidden/ServerError`）。
+- `internal/webui/embed/`
+  - `embed.go`：`//go:embed all:dist` 导出 `DistFS`，供静态路由使用。
+- `internal/cli/serve.go`：`codectl serve` 命令；`--addr`、`--auto-migrate`、`--open`。
+- `web/`：Vite + React 应用；`npm run build` 产出 `web/dist` 被嵌入。
+- `migrations/`（可选）：如需手写迁移脚本，放置于此。
+
+与 rockbase 的映射：`internal/db`、`internal/httpx`、`internal/model`、`web/embed.go` 的职责与结构一致，仅命名空间从 `rockbase/*` 切换至 `codectl/*`，并按需求精简。
+
+### 配置
+
+环境变量（示例默认）：
+
+- `ADDR`：监听地址，默认 `:8080`。
+- `DB_DRIVER`：`sqlite` | `postgres`（默认 `sqlite`）。
+- `DB_DSN`：数据库 DSN。
+  - 当 `DB_DRIVER=sqlite` 时，默认 `~/.codectl/codectl.db`（文件路径）。
+  - 当 `DB_DRIVER=postgres` 时，应为连接串，例如 `postgres://user:pass@host:5432/db?sslmode=disable`。
+- `JWT_SECRET`：JWT 签发密钥，默认 `dev-secret-change-me`（开发环境）。
+- `ALLOW_ORIGINS`：CORS 白名单（逗号分隔），默认 `*`。
+- `LOG_SUCCESS_REQUESTS`：是否记录 2xx/3xx，默认 `true`。
+- `ACTIVITY_LOG_KEEP_DAYS`：活动日志保留天数，默认 `7`（后台清理）。
+- `RATE_LIMIT_RPM`/`RATE_LIMIT_BURST`：限流参数，默认 `120/60`。
+- `GZIP_LEVEL`：Gzip 等级，默认 `-1`（中间件默认）。
+- `STORAGE_BACKEND`：`local`（默认）。
+- `STORAGE_LOCAL_DIR`：本地存储目录，默认 `assets/uploads`。
+
+CLI：
+
+- `codectl serve --addr :8080 --auto-migrate --open`。
+
+### 启动流程
+
+1) 加载配置 → 初始化 GORM → 可选 `AutoMigrate`。
+2) 启动后台任务（定期清理活动日志等）。
+3) 组装 Gin 路由与中间件、创建 HTTP 服务器并监听。
+4) 优雅关闭：`SIGINT/SIGTERM` 触发 `Shutdown`。
+
+## 数据模型（初版）
+
+```go
+// model/user.go
+type User struct {
+  ID           uint      `gorm:"primaryKey" json:"id"`
+  Email        string    `gorm:"uniqueIndex;size:255" json:"email"`
+  Name         string    `gorm:"size:255" json:"name"`
+  Role         string    `gorm:"size:32;default:user" json:"role"`
+  PasswordHash string    `gorm:"size:255" json:"-"`
+  CreatedAt    time.Time `json:"createdAt"`
+  UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// model/activity_log.go
+type ActivityLog struct {
+  ID           uint      `gorm:"primaryKey" json:"id"`
+  Method       string    `gorm:"size:8" json:"method"`
+  Path         string    `gorm:"size:255" json:"path"`
+  Status       int       `json:"status"`
+  DurationMs   int64     `json:"durationMs"`
+  UserID       *uint     `json:"userId"`
+  TraceID      string    `gorm:"size:64" json:"traceId"`
+  IP           string    `gorm:"size:64" json:"ip"`
+  UA           string    `gorm:"size:255" json:"ua"`
+  ErrorCode    string    `gorm:"size:64" json:"errorCode"`
+  ErrorMessage string    `gorm:"size:512" json:"errorMessage"`
+  CreatedAt    time.Time `json:"createdAt"`
+}
+
+// model/file_object.go
+type FileObject struct {
+  ID        uint      `gorm:"primaryKey" json:"id"`
+  Path      string    `gorm:"uniqueIndex;size:512" json:"path"`
+  Name      string    `gorm:"size:255" json:"name"`
+  Size      int64     `json:"size"`
+  Mime      string    `gorm:"size:128" json:"mime"`
+  OwnerID   *uint     `json:"ownerId"`
+  CreatedAt time.Time `json:"createdAt"`
+}
+```
+
+备注：Provider Catalog 仍使用文件存储（`~/.codectl/provider.json`），短期不纳入 DB（与现有实现保持一致）。如需历史/变更审计，可新增 `ProviderCatalogChange` 表（后续提案）。
+
+## API 设计
+
+公共：
+
+- `GET  /api/health` → `{status:"ok"}`。
+- `GET  /api/version` → `{version:string}`。
+
+鉴权相关：
+
+- `POST /api/auth/superuser/init` → 初始化首位超级管理员（若已存在则 403）。
+- `POST /api/auth/login` → 登录，返回 `{token, user}`（JWT Bearer）。
+- `GET  /api/me` → 返回当前用户信息（需登录）。
+
+用户管理（仅超级管理员）：
+
+- `GET  /api/users` → 用户列表（基本字段）。
+- `POST /api/users` → 创建用户（默认 `role=user`）。
+
+文件：
+
+- `POST /api/upload`（需登录）→ 表单文件字段 `file`，返回 `{id,path,name,size,mime,url}`。
+- `GET  /files/*path` → 按路径公开访问（走 `storage`）。
+
+Web UI（配置编辑，与 `webui.spec.mdx` 对齐）：
+
+- `GET  /api/providers` → 读取 v2 catalog（文件）。
+- `PUT  /api/providers` → 校验并持久化至文件，返回规范化后的 catalog。错误：400（格式）、500（IO）。
+
+嵌入式 UI：
+
+- `GET /*path` → 从 `embed.DistFS` 提供静态资源，未知路径回退 `index.html`（SPA）。
+
+## 路由与中间件（伪代码）
+
+```go
+// internal/httpx/router.go
+func Router(cfg *config.Config, gdb *gorm.DB) *gin.Engine {
+  r := gin.New()
+  r.Use(gin.Logger(), RequestID(), Recoverer(), SecurityHeaders())
+  r.Use(BodyLimit(10<<20))
+  if cfg.GzipLevel != 0 { r.Use(gzip.Gzip(cfg.GzipLevel)) }
+  r.Use(cors.New(/* from cfg.CORSOrigins() */))
+  r.Use(AuthMiddleware(cfg, gdb))
+  r.Use(RateLimit(cfg, cfg.RateLimitRPM, cfg.RateLimitBurst))
+  r.Use(ActivityLogger(cfg, gdb))
+
+  api := r.Group("/api")
+  api.GET("/health", health)
+  api.GET("/version", version)
+
+  api.POST("/auth/superuser/init", superuserInit)
+  api.POST("/auth/login", login)
+  api.GET("/me", RequireAuth(), me)
+
+  api.GET("/users", RequireAuth(), usersList)
+  api.POST("/users", RequireSuperuser(), usersCreate)
+
+  api.POST("/upload", RequireAuth(), upload)
+
+  // provider catalog（文件后端）
+  api.GET("/providers", providersGet)
+  api.PUT("/providers", providersPut)
+
+  mountFiles(r, storage.New(cfg))
+  mountEmbeddedUI(r) // serve /* with index fallback
+  return r
+}
+```
+
+## DB 初始化与迁移（伪代码）
+
+```go
+// internal/db/db.go
+func Init(cfg *config.Config) (*gorm.DB, error) {
+  switch cfg.DBDriver {
+  case "postgres":
+    return gorm.Open(postgres.Open(cfg.DBDsn), &gorm.Config{})
+  default: // sqlite as default
+    // ensure parent dir exists for file DSN
+    dsn := cfg.DBDsn
+    if dsn == "" { dsn = filepath.Join(ConfigHome(), "codectl.db") }
+    if dir := filepath.Dir(dsn); dir != "" { _ = os.MkdirAll(dir, 0o755) }
+    return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+  }
+}
+
+func AutoMigrate(gdb *gorm.DB) error {
+  return gdb.AutoMigrate(&model.User{}, &model.ActivityLog{}, &model.FileObject{})
+}
+```
+
+测试建议：对 handler 使用 sqlite 内存库（`DB_DRIVER=sqlite` 且 `DB_DSN=:memory:?cache=shared`）。
+
+## CLI 命令（伪代码）
+
+```go
+// internal/cli/serve.go
+cmd := &cobra.Command{Use: "serve", Short: "Start HTTP server", RunE: func(cmd *cobra.Command, args []string) error {
+  cfg := config.Load()
+  if addr != "" { cfg.Addr = addr }
+  gdb, err := db.Init(cfg)
+  if err != nil { return err }
+  if autoMigrate { if err := db.AutoMigrate(gdb); err != nil { return err } }
+  rootCtx, cancel := context.WithCancel(context.Background())
+  defer cancel()
+  cron.Start(rootCtx, cfg, gdb)
+  r := httpx.Router(cfg, gdb)
+  srv := &http.Server{Addr: cfg.Addr, Handler: r}
+  go srv.ListenAndServe()
+  // wait for signal, then graceful shutdown
+  return nil
+}}
+```
+
+## 安全
+
+- 默认仅监听本地；若绑定非回环地址，控制台输出高亮警告。
+- 所有变更性接口（创建用户、上传、编辑 providers）要求登录；仅超级管理员可创建用户。
+- CORS 与 Gzip 可通过配置开关控制；限流默认开启（防爆破与滥用）。
+
+## 测试
+
+- 处理器单元测试：`health/version`、`auth` 流程、`users`、`providers`（使用 `t.TempDir()` + `internal/testutil.WithEnv` 隔离 HOME）。
+- 中间件：`RequestID`、`Auth`、`RateLimit`、`ActivityLogger` 的基本行为。
+- DB：默认使用 sqlite（文件或内存 `:memory:`），无需外部服务；若验证兼容 Postgres，可在 CI 或本地设置 `DB_DRIVER=postgres` 与相应 `DB_DSN`。
+
+## 运维与 DX
+
+- `make web-build`：构建 SPA；
+- `go build`：若 `web/dist` 存在则嵌入；否则访问前端路径返回 404 并输出提示。
+- `codectl serve --open`：启动后自动打开浏览器（`http://127.0.0.1:8080/`）。
+
+## 验收标准
+
+- `codectl serve` 能启动 Gin 服务器，默认绑定 `127.0.0.1:8080`。
+- 默认数据库为 sqlite：未设置 `DB_DRIVER` 时在 `~/.codectl/codectl.db` 创建并运行迁移。
+- 访问 `/` 能加载嵌入的前端（若内置 `web/dist` 存在）。
+- `POST /api/auth/superuser/init` 能创建首位超级管理员；`/api/auth/login` 能签发 JWT；`/api/me` 返回当前用户。
+- `GET/POST /api/users` 由权限正确控制。
+- `POST /api/upload` 能保存文件并返回可访问的 URL；`/files/*` 能正确回源。
+- `GET/PUT /api/providers` 能按文件后端工作并正确校验错误场景。
+- 新增代码路径覆盖基础单测，遵循 `go fmt` 与现有风格约束；不引入不必要依赖。
+
+## 兼容性与演进
+
+- 兼容现有 `webui.spec.mdx` 的 API 与目标；本规范提供“增强型后端”选项。
+- 未来迁移 Postgres：通过 `DB_DRIVER=postgres` + `DB_DSN` 切换驱动；保持 GORM 模型与迁移脚本一致性。
+- 后续可提案：将 Provider Catalog 纳入 DB 并提供版本/审计；增加细粒度权限；引入 OpenTelemetry 指标与追踪。

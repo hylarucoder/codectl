@@ -1,0 +1,27 @@
+# Vite / SPA build output
+dist/
+dist-ssr/
+.vite/
+
+# Node dependencies
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/Editor
+.DS_Store
+
+# Env files (keep examples only)
+.env.local
+.env.*.local
+
+# Coverage / cache
+coverage/
+.eslintcache
+
+# Temp
+tmp/

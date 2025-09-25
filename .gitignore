@@ -45,3 +45,9 @@ codectl
 codectl-new
 codectl-test
 coverage.out
+
+# Frontend workspace artifacts
+ui/node_modules/
+ui/dist/
+ui/dist-ssr/
+ui/.vite/

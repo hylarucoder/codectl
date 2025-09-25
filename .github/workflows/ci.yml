@@ -27,6 +27,34 @@ jobs:
       - name: Download deps
         run: go mod download
 
+      # Build Web UI assets so //go:embed all:dist matches files in ui/ and server embed
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+
+      - name: Install UI deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build UI (Vite)
+        working-directory: ui
+        run: pnpm run build
+
+      - name: Sync built UI into server embed
+        run: |
+          rm -rf internal/webui/embed/dist
+          mkdir -p internal/webui/embed
+          cp -R ui/dist internal/webui/embed/dist
+
       - name: Build
         run: go build ./...
 
